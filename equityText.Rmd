@@ -239,38 +239,32 @@ top_twenty_cooccurring_words_mdba <- as.data.frame(apply(fcm_interest_mdba, 1, f
 }))
 
 
-# Looking at all toekns in the fcm
+# Looking at all toekns in the fcm calculate token frequencies, sort, and convert to data frame
 
-all_feature_counts_df <- dfm_mdba_nb_sub %>%
-  as.matrix() %>%
-  as.data.frame() %>%
-  rownames_to_column(var = "original_token") %>%
-  gather(key = "document", value = "frequency", -original_token) %>%
-  group_by(original_token) %>%
-  summarise(frequency = sum(frequency), .groups = "drop") %>%
-  rename(token = original_token) %>%
-  arrange(desc(frequency))
-
-
-# calculate token frequencies, sort, and convert to data frame
-
-all_feature_counts_df <- dfm(mdba_nb_sub_token) %>%
+all_feature_counts_df_mdba <- dfm(mdba_nb_sub_token) %>%
   colSums() %>%
   sort(decreasing = TRUE) %>%
   as.data.frame() %>%
   rownames_to_column(var = "word") %>%
   rename(frequency = ".")
 
+# Or just for the top ten
 
-all_feature_counts_df <- dfm_mdba_nb_sub %>% 
+all_feature_counts_df_top_ten <- dfm_mdba_nb_sub %>% 
   topfeatures() %>% 
   as_tibble(rownames = "token") %>% 
   rename(frequency = value)
 
-# Check the data frame
-head(all_feature_counts_df)
+# Chart the top 50
 
-
+all_feature_counts_df_mdba %>%
+  head(50) %>%
+  ggplot(aes(x = reorder(word, frequency), y = frequency)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(x = "Word", y = "Frequency", title = "Top 50 Word Frequencies") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 6))
 
 
 ```
