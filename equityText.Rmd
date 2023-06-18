@@ -1,0 +1,801 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Initial scraping document
+
+```{r}
+# required libraries
+
+library(here) # 
+library(tidyverse) # for general data wrangling
+library(rvest) # for webscraping
+library(polite) # for polite interactions with webserveres
+library(fs)
+library(pdftools) # for PDF text extraction
+library(tm) # for text mining
+library(quanteda) # analysis of textual data  
+library(quanteda.textstats)
+library(tidytext) #a tidy data model for textual analysis
+library(writexl) # export tables to Excel
+library(httr2) #webscraping update and rewrite to httr
+library(httr) #webscraping 
+```
+# MDBA northern basin amendments
+
+
+```{r}
+mdba_NB_url <- "https://getinvolved.mdba.gov.au/bp-amendments-submissions/widgets/139364/documents"
+
+# from the polite package, we properly identify ourselves and respect any explicit limits
+session <- bow(mdba_NB_url, force = TRUE)
+
+# scrape the page contents
+NB_page <- scrape(session)
+```
+
+```{r}
+download_links <- tibble(link_names = NB_page %>%
+                           html_nodes("a")%>%
+                           html_text(),
+                         link_urls = NB_page %>%
+                           html_nodes("a") %>%
+                           html_attr('href'))
+
+download_links_docs <- download_links %>%
+  filter(str_detect(link_names, "No. [0-9]"))
+
+download_links_docs_subset <- download_links_docs %>%
+  slice(c(1:10))
+
+download_links_docs_subset <- download_links_docs_subset %>%
+  mutate(link_urls = paste0(link_urls,"/download"),
+         link_names = gsub("\\(pdf\\)", "", link_names), 
+         link_names = str_trim(link_names),# remove (pdf) from link_names
+         link_names = paste0(link_names, ".pdf")) 
+
+
+download_links_docs<- download_links_docs %>%
+  mutate(link_urls = paste0(link_urls,"/download"),
+         link_names = gsub("\\(pdf\\)", "", link_names), 
+         link_names = str_trim(link_names),# remove (pdf) from link_names
+         link_names = paste0(link_names, ".pdf")) 
+
+                           
+```
+
+```{r}
+# Function to download the PDFs and save in a defined directory
+
+mdba_subdirectory <- "docs_mdba/bp_amendments_docs"
+
+dir.create(mdba_subdirectory, recursive = T, showWarnings = F)
+
+download_pdf <- function(link_urls, link_names) {
+  save_path_mdba <- file.path(mdba_subdirectory, link_names)
+  httr::GET(link_urls, httr::write_disk(path = save_path_mdba, overwrite = TRUE))
+}
+
+# Apply the function to each row of the data frame
+pmap(download_links_docs, download_pdf)
+##
+
+```
+
+```{r}
+
+# Import the PDFs and build initial corpus
+
+# List all PDF files
+mdba_submissions <- list.files(path = "docs_mdba/bp_amendments_docs/", pattern = "*.pdf", full.names = TRUE)
+
+# Function to read PDFs and return a dataframe with the filename and text
+read_pdf <- function(file) {
+  text <- pdf_text(file)
+  clean_text <- gsub("[^[:print:]]", "", text)
+  clean_text_collapsed <-  paste(clean_text, collapse = " ")
+  tibble(filename = file, text = clean_text_collapsed)
+}
+
+# problems loading pdfs - looks like pdftools can't handle some of the pdfs - let's use purrr safely to create a version that doesn't fail when it hits these
+
+# Create a safe version of pdf_text
+safe_pdf_text <- safely(pdf_text)
+
+# Apply safe_pdf_text to each file
+results <- map(mdba_submissions, safe_pdf_text)
+
+# Check which files caused errors
+errors <- map_lgl(results, ~ !is.null(.x$error))
+
+# Print the names of the files that caused errors
+print(mdba_submissions[errors])
+
+# here's the result - one pdf file with an error - it won't open manually either - there is a strange management of this single file - it's listed as an html, but can be accesses via two clicks as a pDF- downloaded manually and added to the set, corrupt one removed and replaced with manual download
+
+#> print(mdba_submissions[errors])
+# [1] "docs_mdba/bp_amendments//No. 367, Mr Mal Peters (17.2 KB) (html).pdf"
+
+
+
+
+# Apply this function to each PDF file
+mdba_sub_text_data <- map_df(mdba_submissions, read_pdf)
+
+
+```
+
+
+```{r}
+
+# Create one big concordance
+
+# Regular expressions for key words
+mdba_efj <- c("fair\\w*", "unfair\\w*", "equit\\w*", "inequit\\w*", "just\\w*", "unjust\\w*", "injust\\w*")
+
+# Pattern string for use in regex
+pattern_string <- paste(mdba_efj, collapse = "|")
+
+mdba_concordance <- mdba_sub_text_data %>%
+  corpus()%>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE) %>%
+  kwic(pattern = pattern_string, valuetype = "regex", window = 30, case_insensitive = TRUE)
+
+```
+
+```{r}
+# Sentiment analysis on the concordance vs the overall corpus - NOT YET COMPLETE
+
+mdba_concordance_dfm <- dfm(mdba_concordance)
+
+# Getting the tokens that are not in the KWIC
+non_kwic_tokens <- tokens_remove(tokens, pattern = pattern_string, valuetype = "regex", case_insensitive = TRUE)
+dfm_non_kwic <- dfm(non_kwic_tokens)
+
+```
+
+
+
+```{r}
+# The single concordance is too big - break it down to individual words as in the above, but write more efficiently than the previous code and save automatically into a defined path
+
+# create subdirectory
+mdba_concord_subdirectory <- "docs_mdba/bp_amendments_concordance"
+
+dir.create(mdba_concord_subdirectory, recursive = T, showWarnings = F)
+
+
+# Define key word patterns
+mdba_efj <- c("\\bfair\\w*", "\\bunfair\\w*", "\\bequit\\w*", "\\binequit\\w*", "\\bjust\\w*", "unjust\\w*", "injust\\w*")
+
+# Tokenise the mdba texts and create a corpus
+mdba_sub_tokens <- corpus(mdba_sub_text_data$text, docnames = mdba_sub_text_data$filename) %>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
+
+# Iterate over the keyword patterns and export as excel files
+map(mdba_efj, ~{
+  # Generate KWIC concordance for the current pattern
+  kwic_concordance <- mdba_sub_tokens %>%
+    kwic(pattern = .x, valuetype = "regex", window = 30, case_insensitive = TRUE) %>%
+    as.data.frame()
+
+  # Create a filename for the Excel file
+  file_name <- paste0(mdba_concord_subdirectory, "/", "mdba_concordance_", gsub("\\\\w\\*", "", .x), ".xlsx")
+
+  # Export the KWIC concordance to Excel
+  write_xlsx(kwic_concordance, path = file_name)
+})
+```
+
+
+# NSW Legislative Council inquiry floodplain harvesting
+
+## Ensuring individual submission names remain
+
+```{r}
+nsw_fph_url <- "https://www.parliament.nsw.gov.au/committees/listofcommittees/Pages/committee-details.aspx?pk=274#tab-hearingsandtranscripts"
+
+session <- bow(nsw_fph_url, force = TRUE)
+
+nsw_fph_page <- scrape(session)
+
+download_links_nsw <- tibble(link_names_nsw = nsw_fph_page %>%
+                            html_nodes("td")   %>%
+                           html_nodes("a")%>%
+                           html_text(),
+                         link_urls_nsw = nsw_fph_page %>%
+                           html_nodes("td")   %>%
+                           html_nodes("a") %>%
+                           html_attr('href'))
+
+download_links_docs_nsw <- download_links_nsw %>%
+  filter(str_detect(link_names_nsw, "No. [0-9]")) %>%
+    mutate(link_names_nsw = str_trim(link_names_nsw, side = c("both"))) 
+
+download_links_docs_subset_nsw <- download_links_docs_nsw %>%
+  slice(c(1:10))
+
+```
+
+```{r}
+
+my_urls <- download_links_docs_nsw$link_urls_nsw
+save_here <- paste0(download_links_docs_nsw$link_names_nsw, ".pdf")
+#mapply(download.file, my_urls, save_here, mode = "wb") 
+pmap(list(my_urls, save_here, mode = "wb"), possibly(download.file, NA)) #pmap solves the same problem as mapply, but allows purrr 'possibly' to be used, which like tryCatch ensures the function continues if one element fails
+
+```
+
+
+## NSW using quanteda corpus function 
+
+```{r}
+
+files_nsw <- list.files(pattern = "pdf$") #creates a vector of PDF file names from PDFs in the same folder (need to move earlier ones out with this model - no path yet - need to improve this code)
+
+submissions_nsw <- lapply(files_nsw, pdf_text)
+
+submissions_nsw_df <- submissions_nsw %>%  #create a dataframe to work with kwic
+  map_df(~.x %>%  #ensuring that if there are any issues with different lengths (which there are) that these are left as NAs
+           map(~if(length(.)) . else NA) %>% 
+           do.call(what = cbind) %>% 
+           as_tibble) %>%
+  cbind(files_nsw) %>% #linking document names
+  unite(submission, V2:V43, na.rm = TRUE) %>% #bringing text from multipage pdfs into a single column
+  mutate(submission = str_squish(submission)) %>% # remove white space from beginning and end and double spaces to one space
+  rowid_to_column("docname") %>% #create docname reference column
+  mutate(docname = str_c("text", docname)) #create docname reference column
+
+```
+
+```{r}
+submissions_nsw_v <- unlist(submissions_nsw) # turn documents into a vector for a single corpus
+
+nsw_sub_corpus <- corpus(submissions_nsw_v) # turn vector into a corpus
+
+nsw_sub_corpus_df <- corpus( #corpus from dataframe (note syntax - to retain document boundaries)
+  submissions_nsw_df,
+  docid_field = "files_nsw",
+  text_field = "submission"
+)
+
+data_tokens_nsw_sub <- tokens(nsw_sub_corpus_df) #tokenize
+kwic(data_tokens_nsw_sub, pattern = "fair") # key words in context test
+
+concordance_just_nsw <- quanteda::kwic(
+  data_tokens_nsw_sub,
+  pattern = "[a-z]*just[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() %>%
+  filter(!str_detect(keyword, regex("adjust|justin", ignore_case = T)))
+
+write_xlsx(concordance_just_nsw, "concordance_just_nsw.xlsx")
+
+concordance_justice_nsw <- quanteda::kwic(
+  data_tokens_nsw_sub,
+  pattern = "[a-z]*justice[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+write_xlsx(concordance_justice_nsw, "concordance_justice_nsw.xlsx")
+
+concordance_equit_nsw <- quanteda::kwic(
+  data_tokens_nsw_sub,
+  pattern = "[a-z]*equit[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+write_xlsx(concordance_equit_nsw, "concordance_equit_nsw.xlsx")
+
+concordance_fair_nsw <- quanteda::kwic(
+  data_tokens_nsw_sub,
+  pattern = "[a-z]*fair[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+write_xlsx(concordance_fair_nsw, "concordance_fair_nsw.xlsx")
+
+```
+
+
+## Working with NSW docs as a single document
+
+```{r}
+
+#finding collocations
+
+nsw_sub_sentences <- nsw_sub_corpus%>%
+  tolower() %>%
+  paste0(collapse = " " ) %>%
+  unlist() %>%
+  tm::removePunctuation()%>%
+  stringr::str_squish()
+
+# Create a token object
+
+nsw_sub_token <- nsw_sub_sentences %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE) %>%
+  tokens_remove(stopwords('english')) 
+
+# compute feature co-occurrence matrix (fcm)
+fcm_nsw_sub <- fcm(nsw_sub_token, context = "window", window = 10)
+
+# specify the words of interest
+words_of_interest <- c("fair", "unfair", "equity", "inequity", "inequitable", "justice", "unjust", "injustice")
+
+# filter the fcm to include only co-occurrences with the words of interest
+fcm_filtered <- fcm_select(fcm_nsw_sub, pattern = words_of_interest)
+
+# print the filtered co-occurrence matrix
+print(fcm_filtered)
+
+#Words apart from the words of interest that co-occur
+# get the rows of the fcm for the words of interest
+fcm_interest <- fcm_nsw_sub[words_of_interest, ]
+
+# remove the columns corresponding to the words of interest from these rows
+fcm_interest <- fcm_interest[, !(colnames(fcm_interest) %in% words_of_interest)]
+
+# find the most common co-occurring words for each word of interest
+top_cooccurring_words <- apply(fcm_interest, 1, function(row) {
+    names(sort(row, decreasing = TRUE))
+})
+
+# find the top N co-occurring words for each word of interest
+top_ten_cooccurring_words <- as.data.frame(apply(fcm_interest, 1, function(x) {
+  cooccurring <- x[!(names(x) %in% words_of_interest)]
+  top_n <- min(10, length(cooccurring))
+  names(sort(cooccurring, decreasing = TRUE))[1:top_n]
+}))
+
+write_xlsx(top_ten_cooccurring_words, "top_ten_matrix_nsw.xlsx")
+
+top_twenty_cooccurring_words <- as.data.frame(apply(fcm_interest, 1, function(x) {
+  cooccurring <- x[!(names(x) %in% words_of_interest)]
+  top_n <- min(20, length(cooccurring))
+  names(sort(cooccurring, decreasing = TRUE))[1:top_n]
+}))
+
+write_xlsx(top_twenty_cooccurring_words, "top_twenty_matrix_nsw.xlsx")
+
+
+```
+
+# ACCC Water Market's Inquiry scraping
+
+```{r}
+# scraping submissions to the issues paper
+
+accc_wm_url <- "https://www.accc.gov.au/inquiries-and-consultations/finalised-inquiries/murray-darling-basin-water-markets-inquiry-2019-21/submissions-to-issues-paper"
+
+# from the polite package, we properly identify ourselves and respect any explicit limits
+session <- bow(accc_wm_url, force = TRUE)
+
+# scrape the page contents
+ACCC_page <- scrape(session)
+```
+
+
+```{r}
+download_links <- tibble(link_names = ACCC_page %>%
+                           html_nodes("a")%>%
+                           html_text(),
+                         link_urls = ACCC_page %>%
+                           html_nodes("a") %>%
+                           html_attr('href'))
+
+download_links_docs <- download_links %>%
+  filter(!str_detect(link_names, "PDF")) %>%
+  filter(str_detect(link_urls, "system")) %>%
+  mutate(link_names = str_trim(link_names, side = c("both"))) %>%
+  mutate(link_urls = str_c("https://www.accc.gov.au", link_urls))
+
+download_links_docs_subset <- download_links_docs %>%
+  slice(c(1:10))
+                           
+```
+
+```{r}
+my_urls <- download_links_docs_subset$link_urls
+save_here <- paste0("Issues paper submission -", download_links_docs$link_names, ".pdf")
+mapply(download.file, my_urls, save_here, mode = "wb")
+
+```
+
+
+# ACCC Water Market's Inquiry scraping
+
+```{r}
+# scraping submissions to the interim report
+
+accc_wm_url <- "https://www.accc.gov.au/inquiries-and-consultations/finalised-inquiries/murray-darling-basin-water-markets-inquiry-2019-21-0/submissions-to-interim-report"
+
+# from the polite package, we properly identify ourselves and respect any explicit limits
+session <- bow(accc_wm_url, force = TRUE)
+
+# scrape the page contents
+ACCC_page <- scrape(session)
+```
+
+
+```{r}
+download_links <- tibble(link_names = ACCC_page %>%
+                           html_nodes("a")%>%
+                           html_text(),
+                         link_urls = ACCC_page %>%
+                           html_nodes("a") %>%
+                           html_attr('href'))
+
+download_links_docs <- download_links %>%
+  filter(!str_detect(link_names, "PDF")) %>%
+  filter(str_detect(link_urls, "system")) %>%
+  mutate(link_names = str_trim(link_names, side = c("both"))) %>%
+  mutate(link_urls = str_c("https://www.accc.gov.au", link_urls))
+
+download_links_docs_subset <- download_links_docs %>%
+  slice(c(1:10))
+                           
+```
+
+```{r}
+my_urls <- download_links_docs_subset$link_urls
+save_here <- paste0("Interim report submission - ", download_links_docs$link_names, ".pdf")
+mapply(download.file, my_urls, save_here, mode = "wb")
+
+```
+
+
+# Build corpus and create concordance
+
+```{r}
+
+files_accc_ir <- list.files(path = "docs_accc/interim_report/", pattern = "*.pdf", full.names = TRUE) 
+submissions_accc_ir <- lapply(files_accc_ir, pdf_text)
+
+submissions_accc_df <- submissions_accc_ir %>%  #create a dataframe to work with kwic
+  map_df(~.x %>%  #ensuring that if there are any issues with different lengths (which there are) that these are left as NAs
+           map(~if(length(.)) . else NA) %>% 
+           do.call(what = cbind) %>% 
+           as_tibble) %>%
+  cbind(files_accc_ir) %>% #linking document names
+  unite(submission, V2:V66, na.rm = TRUE) %>% #bringing text from multipage pdfs into a single column
+  mutate(submission = str_squish(submission)) %>% # remove white space from beginning and end and double spaces to one space
+  rowid_to_column("docname") %>% #create docname reference column
+  mutate(docname = str_c("text", docname)) #create docname reference column
+
+```
+
+
+```{r}
+submissions_accc_v <- unlist(submissions_accc) # turn documents into a vector for a single corpus
+
+accc_sub_corpus <- corpus(submissions_accc_v) # turn vector into a corpus
+
+accc_sub_corpus_df <- corpus( #corpus from dataframe (note syntax - to retain document boundaries
+  submissions_accc_df,
+  docid_field = "files_accc",
+  text_field = "submission"
+)
+
+data_tokens_accc_sub <- tokens(accc_sub_corpus_df) #tokenize
+kwic(data_tokens_accc_sub, pattern = "fair") # key words in context test
+
+concordance_just_accc <- quanteda::kwic(
+  data_tokens_accc_sub,
+  pattern = "[a-z]*just[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() %>%
+  filter(!str_detect(keyword, regex("adjust|justin", ignore_case = T)))
+
+write_xlsx(concordance_just_accc, "concordance_just_accc.xlsx")
+
+concordance_justice_accc <- quanteda::kwic(
+  data_tokens_accc_sub,
+  pattern = "[a-z]*justice[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+write_xlsx(concordance_justice_accc, "concordance_justice_accc.xlsx")
+
+concordance_equit_accc <- quanteda::kwic(
+  data_tokens_accc_sub,
+  pattern = "[a-z]*equit[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+write_xlsx(concordance_equit_accc, "concordance_equit_accc.xlsx")
+
+concordance_fair_accc <- quanteda::kwic(
+  data_tokens_accc_sub,
+  pattern = "[a-z]*fair[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+write_xlsx(concordance_fair_accc, "concordance_fair_accc.xlsx")
+
+```
+
+## Working with ACCC docs as a single document
+
+```{r}
+
+#finding collocations
+
+accc_sub_sentences <- accc_sub_corpus%>%
+  tolower() %>%
+  paste0(collapse = " " ) %>%
+  unlist() %>%
+  tm::removePunctuation()%>%
+  stringr::str_squish()
+
+# Create a token object
+
+accc_sub_token <- accc_sub_sentences %>% 
+  tokens(remove_punct = TRUE, remove_numbers = TRUE) %>%
+  tokens_remove(stopwords('english')) 
+
+# compute feature co-occurrence matrix (fcm)
+fcm_accc_sub <- fcm(accc_sub_token, context = "window", window = 10)
+
+# specify the words of interest
+words_of_interest <- c("fair", "unfair", "equity", "inequity", "inequitable", "justice", "unjust", "injustice")
+
+# filter the fcm to include only co-occurrences with the words of interest
+fcm_filtered <- fcm_select(fcm_accc_sub, pattern = words_of_interest)
+
+# print the filtered co-occurrence matrix
+print(fcm_filtered)
+
+# check if the words of interest are in the fcm_mat and remove unused words (stops 'subscript out of bounds' error)
+words_of_interest <- words_of_interest[words_of_interest %in% rownames(fcm_accc_sub)]
+
+
+#Words apart from the words of interest that co-occur
+# get the rows of the fcm for the words of interest
+fcm_interest <- fcm_accc_sub[words_of_interest, ]
+
+# remove the columns corresponding to the words of interest from these rows
+fcm_interest <- fcm_interest[, !(colnames(fcm_interest) %in% words_of_interest)]
+
+# find the most common co-occurring words for each word of interest
+top_cooccurring_words <- apply(fcm_interest, 1, function(row) {
+    names(sort(row, decreasing = TRUE))
+})
+
+# find the top N co-occurring words for each word of interest
+top_ten_cooccurring_words <- as.data.frame(apply(fcm_interest, 1, function(x) {
+  cooccurring <- x[!(names(x) %in% words_of_interest)]
+  top_n <- min(10, length(cooccurring))
+  names(sort(cooccurring, decreasing = TRUE))[1:top_n]
+}))
+
+write_xlsx(top_ten_cooccurring_words, "top_ten_matrix_accc.xlsx")
+
+top_twenty_cooccurring_words <- as.data.frame(apply(fcm_interest, 1, function(x) {
+  cooccurring <- x[!(names(x) %in% words_of_interest)]
+  top_n <- min(20, length(cooccurring))
+  names(sort(cooccurring, decreasing = TRUE))[1:top_n]
+}))
+
+write_xlsx(top_twenty_cooccurring_words, "top_twenty_matrix_accc.xlsx")
+
+
+```
+
+
+
+
+# Further work from here down...
+
+```{r}
+# Define co-occurrence function NOT YET WORKING - GO BACK TO PREVIOUS APPROACH
+co_occurrence <- function(dfm, keywords, N){
+  cooccur_mat <- fcm(dfm, context = "document", count = "frequency", tri = FALSE)
+  cooccur_df <- as.data.frame(as.matrix(cooccur_mat))
+  
+  top_cooccur <- lapply(keywords, function(keyword) {
+    if(keyword %in% names(cooccur_df)) {
+      keyword_cooccur <- cooccur_df[,keyword]
+      keyword_cooccur <- keyword_cooccur[order(-keyword_cooccur)][1:N]
+    } else {
+      keyword_cooccur <- NULL
+    }
+    return(keyword_cooccur)
+  })
+  
+  names(top_cooccur) <- keywords
+  return(top_cooccur)
+}
+
+# Keywords
+keywords <- c("fairness", "equity", "justice")
+
+# Create co-occurrence matrix
+top_cooccur <- co_occurrence(mdba_sub_dfm, keywords, 10)
+
+# View results
+print(top_cooccur)
+
+```
+
+
+
+
+
+# Old approaches
+
+```{r}
+submissions_nsw_df <- submissions_nsw %>%  #create a dataframe to work with kwic
+  map_df(~.x %>%  #ensuring that if there are any issues with different lengths (which there are) that these are left as NAs
+           map(~if(length(.)) . else NA) %>% 
+           do.call(what = cbind) %>% 
+           as_tibble) %>%
+  cbind(files) %>% #linking document names
+  unite(submission, V2:V43, na.rm = TRUE) %>% #bringing text from multipage pdfs into a single column
+  mutate(submission = str_squish(submission)) %>% # remove white space from beginning and end and double spaces to one space
+  rowid_to_column("docname") %>% #create docname reference column
+  mutate(docname = str_c("text", docname)) #create docname reference column
+
+```
+
+```{r}
+# Create concordances
+
+concordance_fair_nsw <- quanteda::kwic(
+  quanteda::tokens(submissions_nsw_df$submission),
+  pattern = "[a-z]*fair[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() %>%
+  filter(!keyword %in% c("Affairs", "affairs"))
+
+concordance_fair_nsw <- concordance_fair_nsw %>%
+  inner_join(select(submissions_nsw_df, c(files, docname)), by = "docname") #bringing filename across
+
+write_xlsx(concordance_fair_nsw, "concordance_fair_nsw.xlsx")
+
+
+concordance_justice_nsw <- quanteda::kwic(
+  quanteda::tokens(submissions_nsw_df$submission),
+  pattern = "[a-z]*justice[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+concordance_justice_nsw <- concordance_justice_nsw %>%
+  inner_join(select(submissions_nsw_df, c(files, docname)), by = "docname") #bringing filename across
+
+write_xlsx(concordance_justice_nsw, "concordance_justice_nsw.xlsx")
+
+concordance_equit_nsw <- quanteda::kwic(
+  quanteda::tokens(submissions_nsw_df$submission),
+  pattern = "[a-z]*equit[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() 
+
+concordance_equit_nsw <- concordance_equit_nsw %>%
+  inner_join(select(submissions_nsw_df, c(files, docname)), by = "docname") #bringing filename across
+
+write_xlsx(concordance_equit_nsw, "concordance_equit_nsw.xlsx")
+
+concordance_just_nsw <- quanteda::kwic(
+  quanteda::tokens(submissions_nsw_df$submission),
+  pattern = "[a-z]*just[a-z]*",
+  valuetype = "regex",
+  window = 30) %>%
+  as.data.frame() %>%
+  filter(!str_detect(keyword, regex("adjust|justin", ignore_case = T)))
+
+write_xlsx(concordance_just_nsw, "concordance_just_nsw.xlsx")
+
+```
+
+
+
+# Buiding a corpus ACCC (Old way)
+
+```{r}
+# from https://youtu.be/1ODVAOWkajw
+
+files <- list.files(pattern = "pdf$") #creates a vector of PDF file names from PDFs in the same folder (need to move earlier ones out with this model - no path yet.)
+submissions <- lapply(files, pdf_text) #loads the files 
+length(submissions) # verify how many files loaded
+lapply(submissions, length) # how many pages per document
+
+# there's more to look at 
+```
+
+```{r}
+# Create a concordance
+
+submissions_merge <- submissions %>%
+  paste0(collapse = " ") %>%
+  str_replace_all("\\\\n", " ") %>%
+  str_squish() 
+# Simple concordance
+
+concordance_fair <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "fair",
+  window = 20) %>%
+  as.data.frame()
+
+#write_xlsx(concordance_fair, "concordance_fair.xlsx")
+
+concordance_equitable <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "equitable",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_equitable, "concordance_equitable.xlsx")
+
+concordance_justice <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "justice",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_justice, "concordance_justice.xlsx")
+
+concordance_unfair <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "unfair",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_unfair, "concordance_unfair.xlsx")
+
+concordance_equity <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "equity",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_unfair, "concordance_equity.xlsx")
+
+concordance_inequity <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "inequity",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_unfair, "concordance_inequity.xlsx")
+
+concordance_inequitable <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "inequitable",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_unfair, "concordance_inequitable.xlsx")
+
+concordance_injustice <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "injustice",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_unfair, "concordance_injustice.xlsx")
+
+concordance_unjust <- quanteda::kwic(
+  quanteda::tokens(submissions_merge),
+  pattern = "unjust",
+  window = 20) %>%
+  as.data.frame()
+
+write_xlsx(concordance_unfair, "concordance_unjust.xlsx")
+
+```
+
+
