@@ -208,7 +208,7 @@ words_of_interest_mdba <- words_of_interest_mdba[words_of_interest_mdba %in% row
 token_freqs_mdba <- table(unlist(tokens(mdba_nb_sub_token)))
 
 # Subset to check the counts for the words of interest
-words_of_interest_counts_mdba <- token_freqs_mdba[names(token_freqs) %in% words_of_interest_mdba]
+words_of_interest_counts_mdba <- token_freqs_mdba[names(token_freqs_mdba) %in% words_of_interest_mdba]
 
 words_of_interest_mdba <- names(words_of_interest_counts_mdba)[words_of_interest_counts_mdba >= 10]
 
@@ -250,7 +250,7 @@ all_feature_counts_df_mdba <- dfm(mdba_nb_sub_token) %>%
 
 # Or just for the top ten
 
-all_feature_counts_df_top_ten <- dfm_mdba_nb_sub %>% 
+all_feature_counts_df_top_ten <- dfm(mdba_nb_sub_token)  %>% 
   topfeatures() %>% 
   as_tibble(rownames = "token") %>% 
   rename(frequency = value)
