@@ -126,7 +126,6 @@ mdba_sub_text_data <- map_df(mdba_submissions, read_pdf)
 
 ```
 
-
 ```{r}
 
 # Create one big concordance
@@ -265,6 +264,20 @@ all_feature_counts_df_mdba %>%
   labs(x = "Word", y = "Frequency", title = "Top 50 Word Frequencies") +
   theme_minimal() +
   theme(axis.text = element_text(size = 6))
+
+dir.create("docs_mdba/bp_amendments_other analysis", recursive = T, showWarnings = F)
+
+mdba_output_list <- list(all_feature_counts_df_mdba =all_feature_counts_df_mdba, all_feature_counts_df_top_ten = all_feature_counts_df_top_ten)
+
+output_dir <- "docs_mdba/bp_amendments_other analysis/"
+
+mdba_output_list %>%
+      imap(function(df, name) {
+    filename <- paste0(output_dir, name, ".xlsx")
+    write_xlsx(df, filename)
+  })
+
+
 
 
 ```
