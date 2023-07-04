@@ -21,6 +21,9 @@ library(tidytext) #a tidy data model for textual analysis
 library(writexl) # export tables to Excel
 library(httr2) #webscraping update and rewrite to httr
 library(httr) #webscraping 
+
+# Load data
+# load("./.RData")
 ```
 # MDBA northern basin amendments
 
@@ -684,7 +687,281 @@ write_xlsx(top_twenty_cooccurring_words, "top_twenty_matrix_accc.xlsx")
 
 ```
 
+# Productivity Commission
 
+```{r}
+pc_nwr_url <- "https://www.pc.gov.au/inquiries/completed/water-reform-2020/submissions"
+
+# from the polite package, we properly identify ourselves and respect any explicit limits
+# session <- bow(pc_nwr_url, force = TRUE)
+
+# scrape the page contents
+#pc_page <- scrape(session)
+
+pc_page <- read_html(pc_nwr_url)
+```
+
+```{r}
+download_links_pc <- tibble(link_names = pc_page %>%
+                           html_nodes("a")%>%
+                           html_text(),
+                         link_urls = pc_page %>%
+                           html_nodes("a") %>%
+                           html_attr('href'))
+
+# add a column to allow separation off the submissions into pre and post submissions to put in different folders
+
+pc_submission_type <- c("#post-draft", "#initial", "#brief")
+
+download_links_pc <- download_links_pc %>%
+  mutate(submission_type = if_else(link_urls %in% pc_submission_type, link_urls, NA_character_)) %>%
+  fill(submission_type) %>%
+  mutate(submission_type = str_replace(submission_type, "#", ""))
+
+# filter for just pdfs and change attachment names so that they include the name of the head submission and remove extraneous "/" characters
+
+download_links_docs_pc <- download_links_pc %>%
+  filter(str_detect(link_names, "PDF")) %>%
+  mutate(link_names = str_replace(link_names, "\\s*\\(PDF\\s*-.*\\)$", "")) %>%
+  mutate(
+    current_name = ifelse(!str_detect(link_names, "^Attachment"), link_names, NA)
+  ) %>%
+  fill(current_name) %>%
+  mutate(
+    link_names = ifelse(str_detect(link_names, "^Attachment"), paste(current_name, link_names), link_names)
+  ) %>%
+  select(-current_name) %>%
+  mutate(link_names = str_replace(link_names, "//", ""))
+
+
+
+```
+
+```{r}
+# Function to download the PDFs and save in a defined directory
+
+#pc_subdirectories <- c("productivity_commission_submissions/initial", "productivity_commission_submissions/post-draft", "productivity_commission_submissions/brief")
+#walk(pc_subdirectories, dir.create, recursive = TRUE)
+
+pc_subdirectory <- "productivity_commission_submissions_NWR_2020"
+
+
+
+download_pdf <- function(link_urls, link_names, submission_type) {
+  # create subdirectories based on submission type
+  pc_paths <- file.path(pc_subdirectory, submission_type)
+  dir.create(pc_paths, recursive = TRUE, showWarnings = FALSE)
+  # add .pdf extension to link_names
+  link_names <- paste0(link_names, ".pdf")
+  # save the PDFs in the respective subdirectory
+  save_path_pc <- file.path(pc_paths, link_names)
+  httr::GET(link_urls, httr::write_disk(path = save_path_pc, overwrite = TRUE))
+}
+
+# Apply the function to each row of the data frame
+pmap(download_links_docs_pc, download_pdf)
+##
+
+```
+
+```{r}
+
+# Import the PDFs and build initial corpus
+
+# List all PDF files
+mdba_submissions <- list.files(path = "docs_mdba/bp_amendments_docs/", pattern = "*.pdf", full.names = TRUE)
+
+# Function to read PDFs and return a dataframe with the filename and text
+read_pdf <- function(file) {
+  text <- pdf_text(file)
+  clean_text <- gsub("[^[:print:]]", "", text)
+  clean_text_collapsed <-  paste(clean_text, collapse = " ")
+  tibble(filename = file, text = clean_text_collapsed)
+}
+
+# problems loading pdfs - looks like pdftools can't handle some of the pdfs - let's use purrr safely to create a version that doesn't fail when it hits these
+
+# Create a safe version of pdf_text
+safe_pdf_text <- safely(pdf_text)
+
+# Apply safe_pdf_text to each file
+results <- map(mdba_submissions, safe_pdf_text)
+
+# Check which files caused errors
+errors <- map_lgl(results, ~ !is.null(.x$error))
+
+# Print the names of the files that caused errors
+print(mdba_submissions[errors])
+
+# here's the result - one pdf file with an error - it won't open manually either - there is a strange management of this single file - it's listed as an html, but can be accesses via two clicks as a pDF- downloaded manually and added to the set, corrupt one removed and replaced with manual download
+
+#> print(mdba_submissions[errors])
+# [1] "docs_mdba/bp_amendments//No. 367, Mr Mal Peters (17.2 KB) (html).pdf"
+
+
+
+
+# Apply this function to each PDF file
+mdba_sub_text_data <- map_df(mdba_submissions, read_pdf)
+
+
+```
+
+```{r}
+
+# Create one big concordance
+
+# Regular expressions for key words
+mdba_efj <- c("fair\\w*", "unfair\\w*", "equit\\w*", "inequit\\w*", "just\\w*", "unjust\\w*", "injust\\w*")
+
+# Pattern string for use in regex
+pattern_string <- paste(mdba_efj, collapse = "|")
+
+mdba_concordance <- mdba_sub_text_data %>%
+  corpus()%>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE) %>%
+  kwic(pattern = pattern_string, valuetype = "regex", window = 30, case_insensitive = TRUE)
+
+```
+
+
+```{r}
+# The single concordance is too big - break it down to individual words as in the above, but write more efficiently than the previous code and save automatically into a defined path
+
+# create subdirectory
+mdba_concord_subdirectory <- "docs_mdba/bp_amendments_concordance"
+
+dir.create(mdba_concord_subdirectory, recursive = T, showWarnings = F)
+
+
+# Define key word patterns
+mdba_efj <- c("\\bfair\\w*", "\\bunfair\\w*", "\\bequit\\w*", "\\binequit\\w*", "\\bjust\\w*", "unjust\\w*", "injust\\w*")
+
+# Tokenise the mdba texts and create a corpus
+mdba_sub_tokens <- corpus(mdba_sub_text_data$text, docnames = mdba_sub_text_data$filename) %>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
+
+# Iterate over the keyword patterns and export as excel files
+map(mdba_efj, ~{
+  # Generate KWIC concordance for the current pattern
+  kwic_concordance <- mdba_sub_tokens %>%
+    kwic(pattern = .x, valuetype = "regex", window = 30, case_insensitive = TRUE) %>%
+    as.data.frame()
+
+  # Create a filename for the Excel file
+  file_name <- paste0(mdba_concord_subdirectory, "/", "mdba_concordance_", gsub("\\\\w\\*", "", .x), ".xlsx")
+
+  # Export the KWIC concordance to Excel
+  write_xlsx(kwic_concordance, path = file_name)
+})
+```
+
+```{r}
+# Co-occurance matrix 
+
+mdba_nb_sub_sentences <- mdba_sub_text_data$text %>%
+  tolower() %>%
+  paste0(collapse = "") %>%
+  unlist() %>%
+  tm::removePunctuation()%>%
+  stringr::str_squish()
+
+# Create a token object
+
+mdba_nb_sub_token <- mdba_nb_sub_sentences %>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE) %>%
+  tokens_remove(stopwords('english')) 
+
+# Compute feature co-occurance matrix
+
+fcm_mdba_nb_sub <- fcm(mdba_nb_sub_token, context = "window", window = 10)
+
+# specify the words of interest
+words_of_interest_mdba <- c("fair", "unfair", "equity", "inequity", "inequitable", "justice", "unjust", "injustice")
+
+# check if the words of interest are in the fcm_mat and remove unused words (stops 'subscript out of bounds' error)
+words_of_interest_mdba <- words_of_interest_mdba[words_of_interest_mdba %in% rownames(fcm_mdba_nb_sub)]
+
+# Strange output for some words when calculating co-occurance matrices - suspect this is because they occur infrequently  - let's try a frequency list and remove all works with a frequency of less than 10
+
+# Create a frequency list of the tokens
+token_freqs_mdba <- table(unlist(tokens(mdba_nb_sub_token)))
+
+# Subset to check the counts for the words of interest
+words_of_interest_counts_mdba <- token_freqs_mdba[names(token_freqs_mdba) %in% words_of_interest_mdba]
+
+words_of_interest_mdba <- names(words_of_interest_counts_mdba)[words_of_interest_counts_mdba >= 10]
+
+
+#Words apart from the words of interest that co-occur
+# get the rows of the fcm for the words of interest
+fcm_interest_mdba <- fcm_mdba_nb_sub[words_of_interest_mdba, ]
+
+# remove the columns corresponding to the words of interest from these rows
+fcm_interest_mdba <- fcm_interest_mdba[, !(colnames(fcm_interest_mdba) %in% words_of_interest)]
+
+# find the most common co-occurring words for each word of interest
+top_cooccurring_words_mdba <- apply(fcm_interest_mdba, 1, function(row) {
+    names(sort(row, decreasing = TRUE))
+})
+
+# find the top N co-occurring words for each word of interest
+top_ten_cooccurring_words_mdba <- as.data.frame(apply(fcm_interest_mdba, 1, function(x) {
+  cooccurring <- x[!(names(x) %in% words_of_interest_mdba)]
+  top_n <- min(10, length(cooccurring))
+  names(sort(cooccurring, decreasing = TRUE))[1:top_n]
+}))
+
+top_twenty_cooccurring_words_mdba <- as.data.frame(apply(fcm_interest_mdba, 1, function(x) {
+  cooccurring <- x[!(names(x) %in% words_of_interest_mdba)]
+  top_n <- min(20, length(cooccurring))
+  names(sort(cooccurring, decreasing = TRUE))[1:top_n]
+}))
+
+
+# Looking at all toekns in the fcm calculate token frequencies, sort, and convert to data frame
+
+all_feature_counts_df_mdba <- dfm(mdba_nb_sub_token) %>%
+  colSums() %>%
+  sort(decreasing = TRUE) %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "word") %>%
+  rename(frequency = ".")
+
+# Or just for the top ten
+
+all_feature_counts_df_top_ten <- dfm(mdba_nb_sub_token)  %>% 
+  topfeatures() %>% 
+  as_tibble(rownames = "token") %>% 
+  rename(frequency = value)
+
+# Chart the top 50
+
+all_feature_counts_df_mdba %>%
+  head(50) %>%
+  ggplot(aes(x = reorder(word, frequency), y = frequency)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(x = "Word", y = "Frequency", title = "Top 50 Word Frequencies") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 6))
+
+dir.create("docs_mdba/bp_amendments_other analysis", recursive = T, showWarnings = F)
+
+mdba_output_list <- list(all_feature_counts_df_mdba =all_feature_counts_df_mdba, all_feature_counts_df_top_ten = all_feature_counts_df_top_ten)
+
+output_dir <- "docs_mdba/bp_amendments_other analysis/"
+
+mdba_output_list %>%
+      imap(function(df, name) {
+    filename <- paste0(output_dir, name, ".xlsx")
+    write_xlsx(df, filename)
+  })
+
+
+
+
+```
 
 
 # Further work from here down...
