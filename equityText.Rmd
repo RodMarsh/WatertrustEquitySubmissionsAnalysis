@@ -964,7 +964,7 @@ mdba_output_list %>%
 ```
 
 
-# Further work from here down...
+# Further work from here down still underway - not all code working...
 
 ```{r}
 # Define co-occurrence function NOT YET WORKING - GO BACK TO PREVIOUS APPROACH
