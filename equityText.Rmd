@@ -745,8 +745,6 @@ download_links_docs_pc <- download_links_pc %>%
 
 pc_subdirectory <- "productivity_commission_submissions_NWR_2020"
 
-
-
 download_pdf <- function(link_urls, link_names, submission_type) {
   # create subdirectories based on submission type
   pc_paths <- file.path(pc_subdirectory, submission_type)
@@ -768,42 +766,28 @@ pmap(download_links_docs_pc, download_pdf)
 
 # Import the PDFs and build initial corpus
 
-# List all PDF files
-mdba_submissions <- list.files(path = "docs_mdba/bp_amendments_docs/", pattern = "*.pdf", full.names = TRUE)
+directories <- c("productivity_commission_submissions_NWR_2020/brief",
+                 "productivity_commission_submissions_NWR_2020/initial",
+                 "productivity_commission_submissions_NWR_2020/post-draft")
 
-# Function to read PDFs and return a dataframe with the filename and text
-read_pdf <- function(file) {
-  text <- pdf_text(file)
-  clean_text <- gsub("[^[:print:]]", "", text)
-  clean_text_collapsed <-  paste(clean_text, collapse = " ")
-  tibble(filename = file, text = clean_text_collapsed)
+# Function to list and read PDFs
+read_pdfs_in_dir <- function(dir) {
+  list.files(path = dir, pattern = "*.pdf", full.names = TRUE) %>% 
+    map_df(~{
+      tryCatch({
+        text <- pdf_text(.x)
+        clean_text <- gsub("[^[:print:]]", "", text)
+        clean_text_collapsed <- paste(clean_text, collapse = " ")
+        tibble(filename = .x, text = clean_text_collapsed)
+      }, error = function(e) {
+        message(paste("Error processing file:", .x))
+        tibble(filename = .x, text = NA_character_)
+      })
+    })
 }
 
-# problems loading pdfs - looks like pdftools can't handle some of the pdfs - let's use purrr safely to create a version that doesn't fail when it hits these
 
-# Create a safe version of pdf_text
-safe_pdf_text <- safely(pdf_text)
-
-# Apply safe_pdf_text to each file
-results <- map(mdba_submissions, safe_pdf_text)
-
-# Check which files caused errors
-errors <- map_lgl(results, ~ !is.null(.x$error))
-
-# Print the names of the files that caused errors
-print(mdba_submissions[errors])
-
-# here's the result - one pdf file with an error - it won't open manually either - there is a strange management of this single file - it's listed as an html, but can be accesses via two clicks as a pDF- downloaded manually and added to the set, corrupt one removed and replaced with manual download
-
-#> print(mdba_submissions[errors])
-# [1] "docs_mdba/bp_amendments//No. 367, Mr Mal Peters (17.2 KB) (html).pdf"
-
-
-
-
-# Apply this function to each PDF file
-mdba_sub_text_data <- map_df(mdba_submissions, read_pdf)
-
+pc_submissions_text <- map_df(directories, read_pdfs_in_dir)
 
 ```
 
@@ -812,12 +796,12 @@ mdba_sub_text_data <- map_df(mdba_submissions, read_pdf)
 # Create one big concordance
 
 # Regular expressions for key words
-mdba_efj <- c("fair\\w*", "unfair\\w*", "equit\\w*", "inequit\\w*", "just\\w*", "unjust\\w*", "injust\\w*")
+pc_efj <- c("fair\\w*", "unfair\\w*", "equit\\w*", "inequit\\w*", "just\\w*", "unjust\\w*", "injust\\w*")
 
 # Pattern string for use in regex
-pattern_string <- paste(mdba_efj, collapse = "|")
+pattern_string <- paste(pc_efj, collapse = "|")
 
-mdba_concordance <- mdba_sub_text_data %>%
+pc_concordance <- mdba_sub_text_data %>%
   corpus()%>%
   tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE) %>%
   kwic(pattern = pattern_string, valuetype = "regex", window = 30, case_insensitive = TRUE)
@@ -829,32 +813,75 @@ mdba_concordance <- mdba_sub_text_data %>%
 # The single concordance is too big - break it down to individual words as in the above, but write more efficiently than the previous code and save automatically into a defined path
 
 # create subdirectory
-mdba_concord_subdirectory <- "docs_mdba/bp_amendments_concordance"
+pc_concord_subdirectory <- "productivity_commission_submissions_NWR_2020/pc_concordance"
 
-dir.create(mdba_concord_subdirectory, recursive = T, showWarnings = F)
+dir.create(pc_concord_subdirectory, recursive = T, showWarnings = F)
 
 
 # Define key word patterns
-mdba_efj <- c("\\bfair\\w*", "\\bunfair\\w*", "\\bequit\\w*", "\\binequit\\w*", "\\bjust\\w*", "unjust\\w*", "injust\\w*")
+pc_efj <- c("\\bfair\\w*", "\\bunfair\\w*", "\\bequit\\w*", "\\binequit\\w*", "\\bjust\\w*", "unjust\\w*", "injust\\w*")
 
 # Tokenise the mdba texts and create a corpus
-mdba_sub_tokens <- corpus(mdba_sub_text_data$text, docnames = mdba_sub_text_data$filename) %>%
+pc_sub_tokens <- corpus(pc_submissions_text$text, docnames = pc_submissions_text$filename) %>%
   tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
 
 # Iterate over the keyword patterns and export as excel files
-map(mdba_efj, ~{
+map(pc_efj, ~{
   # Generate KWIC concordance for the current pattern
-  kwic_concordance <- mdba_sub_tokens %>%
+  kwic_concordance <- pc_sub_tokens %>%
     kwic(pattern = .x, valuetype = "regex", window = 30, case_insensitive = TRUE) %>%
     as.data.frame()
 
   # Create a filename for the Excel file
-  file_name <- paste0(mdba_concord_subdirectory, "/", "mdba_concordance_", gsub("\\\\w\\*", "", .x), ".xlsx")
+  file_name <- paste0(pc_concord_subdirectory, "/", "pc_concordance_", gsub("\\\\w\\*", "", .x), ".xlsx")
 
   # Export the KWIC concordance to Excel
   write_xlsx(kwic_concordance, path = file_name)
 })
 ```
+
+```{r}
+
+# Define key word patterns
+pc_efj <- c("\\bfair\\w*", "\\bunfair\\w*", "\\bequit\\w*", "\\binequit\\w*", 
+            "\\bjust\\w*", "unjust\\w*", "injust\\w*")
+
+# Tokenise the mdba texts and create a corpus
+pc_sub_tokens <- corpus(pc_submissions_text$text, docnames = pc_submissions_text$filename) %>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
+
+# Iterate over the keyword patterns and export as excel files, and collect data into one dataframe
+all_data <- map_dfr(pc_efj, ~{
+  # Generate KWIC concordance for the current pattern
+  kwic_concordance <- pc_sub_tokens %>%
+    kwic(pattern = .x, valuetype = "regex", window = 30, case_insensitive = TRUE) %>%
+    as.data.frame()
+
+  # Create a filename for the Excel file
+  file_name <- paste0(pc_concord_subdirectory, "/", "pc_concordance_", gsub("\\\\w\\*", "", .x), ".xlsx")
+
+  # Export the KWIC concordance to Excel
+  write_xlsx(kwic_concordance, path = file_name)
+  
+  # Return the data
+  tibble(filename = kwic_concordance$docname,
+         keyword = .x,
+         token = tolower(kwic_concordance$keyword))
+})
+
+# Count the number of documents that contain each string pattern
+doc_counts <- all_data %>%
+  group_by(token) %>%
+  summarise(num_docs = n_distinct(filename), 
+            proportion = num_docs / n_distinct(pc_submissions_text$filename))
+
+# Count the number of times each string pattern appears in each document
+token_counts <- all_data %>%
+  count(filename, token)
+
+```
+
+
 
 ```{r}
 # Co-occurance matrix 
