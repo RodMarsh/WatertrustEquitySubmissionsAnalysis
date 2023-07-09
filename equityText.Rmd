@@ -21,6 +21,10 @@ library(tidytext) #a tidy data model for textual analysis
 library(writexl) # export tables to Excel
 library(httr2) #webscraping update and rewrite to httr
 library(httr) #webscraping 
+library(quanteda.textmodels) # for topic modelling using LDA - but this doesn't seem to be available anymore
+library(topicmodels) # to do the topic modelling using LDA
+library(proxy) # 
+library(philentropy) # for calculating Jensen-Shannon Divergence
 
 # Load data
 # load("./.RData")
@@ -840,6 +844,8 @@ map(pc_efj, ~{
 })
 ```
 
+## Alternative approach that allows for creation of a dataframe to count documents using the terms and usage within documents.
+
 ```{r}
 
 # Define key word patterns
@@ -880,6 +886,104 @@ token_counts <- all_data %>%
   count(filename, token)
 
 ```
+
+# Topic modelling with the productivity commission submissions
+
+```{r}
+# Continue preprocessing
+
+pc_sub_tokens_lc <- tokens_tolower(pc_sub_tokens)
+pc_sub_tokens_lc_no_stop <-  tokens_remove(pc_sub_tokens_lc, stopwords("en"))
+
+# Create a document feature matrix
+
+pc_sub_dfm <- dfm(pc_sub_tokens_lc_no_stop) # for the quanteda textmodel_lda, which no longer seems to exist - even though it is in the documentation 
+pc_sub_dtm <- convert(pc_sub_dfm, to = "topicmodels")
+```
+
+```{r}
+# Topic modelling setting K
+
+pc_k <- 40 # number of topics
+#pc_lda_model <- textmodel_lda(dfm, k =k) # doesn't appear to work with quanteda approach LDA not available
+
+pc_lda_model <- LDA(pc_sub_dtm, k = pc_k, method = "Gibbs", control = list(seed = 1234))
+
+#view terms
+
+N <- 20
+terms(pc_lda_model, N)
+
+```
+
+```{r}
+# Identify "equity" submissions - 
+
+equity_keywords <-  c("\\bfair\\w*", "\\bunfair\\w*", "\\bequit\\w*", "\\binequit\\w*", "\\bjustice", "unjust\\w*", "injust\\w*")
+
+# identify which terms match these patterns
+
+matching_terms <- equity_keywords %>% 
+  map(~grep(.x, Terms(pc_sub_dtm), value = TRUE)) %>%
+  unlist() %>%
+  unique()
+
+#clean up the list
+
+terms_remove <- c("https\\w*", "fairy\\w*", "fairb\\w*", "fairl\\w*")
+
+#match terms to patterns in matching-terms
+
+terms_remove <- unique(unlist(map(terms_remove, ~grep(.x, matching_terms, value = TRUE))))
+
+# Remove the terms from matching_terms
+matching_terms <- setdiff(matching_terms, terms_remove)
+
+#identify "equity" submissions
+pc_equity_submissions <- slam::row_sums(pc_sub_dtm[, matching_terms]) > 0
+
+# Create a matrix of topic distributions for each document
+
+pc_topic_distributions <- posterior(pc_lda_model)$topics
+
+# Check the topic distribution for each document sums to one
+
+pc_topic_distro_row_sums <- rowSums(pc_topic_distributions)
+
+# Check if the row sums are approximately 1 (within a small tolerance)
+all(abs(pc_topic_distro_row_sums - 1) < 1e-9)
+
+
+```
+
+# Calcualting similarity measures
+
+## Jaccard similarity
+
+
+## Jensen-Shannon Divergence
+
+```{r}
+# Calculate the Jensen-Shannon Divergence for each pair of documents
+
+# Create a dataframe of all combinations of document indices
+pc_topic_distro_doc_pairs <- expand.grid(i = 1:nrow(pc_topic_distributions), j = 1:nrow(pc_topic_distributions))
+
+# Function to compute JSD between a pair of documents
+pc_topic_distro_compute_jsd <- function(i, j) {
+   distributions <- rbind(pc_topic_distributions[i, ], pc_topic_distributions[j, ])
+  # compute JSD
+  JSD(distributions, unit = "log2")
+}
+
+# Use pmap to apply compute_jsd to each pair of documents
+pc_topic_distro_jsd_values <- pmap_dbl(pc_topic_distro_doc_pairs, pc_topic_distro_compute_jsd)
+
+# Convert the result to a matrix
+pc_topic_distro_jsd_matrix <- matrix(pc_topic_distro_jsd_values, nrow = nrow(pc_topic_distributions), byrow = TRUE)
+
+```
+
 
 
 
