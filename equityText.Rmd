@@ -23,8 +23,10 @@ library(httr2) #webscraping update and rewrite to httr
 library(httr) #webscraping 
 library(quanteda.textmodels) # for topic modelling using LDA - but this doesn't seem to be available anymore
 library(topicmodels) # to do the topic modelling using LDA
-library(proxy) # 
+library(proxy) # for calculating cosine and jaccard similarity measures
 library(philentropy) # for calculating Jensen-Shannon Divergence
+library(heatmaply) # for creating heatmaps of topic distributions
+library(scales) # scales 
 
 # Load data
 # load("./.RData")
@@ -956,9 +958,228 @@ all(abs(pc_topic_distro_row_sums - 1) < 1e-9)
 
 ```
 
+# Inspecting the topic modelled distributions
+
+## Heat map
+
+```{r}
+# Convert the pc_topic_distributions matrix into a data frame
+pc_topic_distributions_df <- as.data.frame(pc_topic_distributions)
+
+# Make sure both pc_topic_distributions and pc_equity_submissions are in the same order
+pc_equity_submissions <- pc_equity_submissions[rownames(pc_topic_distributions_df)]
+
+# Create a custom color scaling function - logs needed to see differences 
+log_breaks <- function(n) {
+  exp(seq(log(min(topic_distributions_df)), log(max(topic_distributions_df)), length.out = n))
+}
+my_palette <- colorRampPalette(viridis(256))
+
+# Create the heatmap with a logarithmic color scale
+heatmaply(pc_topic_distributions_df, 
+          breaks = log_breaks,
+          colors = my_palette,
+          Rowv = NULL, # Disable row clustering
+          Colv = NULL, # Disable column clustering
+          showticklabels = c(FALSE, FALSE), # Hide tick labels for a cleaner look
+          row_side_colors = pc_equity_submissions, # Use the pc_equity_submissions to color the row side bar
+          row_side_palette = c("TRUE" = "black", "FALSE" = "white")) # Color equity submissions black and others white
+
+```
+## PCA biplot
+
+A PCA biplot provides a two-dimensional summary of the variation in the topic model, showing both how the topics (represented as vectors) relate to each other and how the documents (represented as points) relate to the topics.
+
+The vectors in the biplot represent the topics, with the direction and length of a vector indicating how that topic contributes to the two principal components. The points in the biplot represent the documents, with the position of a point indicating how the corresponding document's topic distribution relates to the two principal components.
+
+The principle components are represented by the arrows or vectors that indicate the direction and magnitude of each component. These arrows represent the loading vectors, which show the contribution of each variable (or in this case, each topic) to the components.
+
+In the context of the PCA biplot above, the principle components are the axes along which the data points are projected. The length and direction of the arrows indicate the strength and direction of the relationship between each topic and the principle components.
+
+Typically, the biplot displays the first two principle components, PC1 and PC2, in a two-dimensional space. PC1 represents the direction that captures the maximum variance in the data, while PC2 represents the next largest orthogonal direction. These components are ordered based on the amount of variation they explain in the data.
+
+To interpret the biplot, examine the angles and distances between the arrows and the data points. The closer the data points are to a particular arrow, the higher the correlation between that variable (topic) and the corresponding principle component. The angle between two arrows indicates the correlation or relationship between the topics they represent.
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(ggfortify)
+
+# Conduct PCA on the topic distributions
+pc_pca_result <- prcomp(pc_topic_distributions)
+
+# Convert the equity submissions vector into a data frame
+pc_equity_submissions_df <- as.data.frame(pc_equity_submissions)
+
+# Generate a PCA biplot, color-coding the points by equity submission status
+autoplot(pc_pca_result, data = pc_equity_submissions_df, colour = 'pc_equity_submissions', 
+         loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE, loadings.label.size = 3)
+```
+## UMAP scatter plot
+
+UMAP (Uniform Manifold Approximation and Projection) plot reduces the high-dimensional topic distribution of each document to a 2D scatter plot. Each document is a point and documents with similar topics should be near each other. 
+
+```{r}
+library(umap)
+
+# UMAP model
+umap_model <- umap::umap(pc_topic_distributions)
+
+# Store the embeddings as a data frame
+umap_data <- data.frame(UMAP1 = umap_model$layout[,1], 
+                        UMAP2 = umap_model$layout[,2],
+                        Equity = as.factor(pc_equity_submissions))
+
+# Plot the UMAP embeddings
+ggplot(umap_data, aes(x = UMAP1, y = UMAP2, color = Equity)) +
+  geom_point() +
+  scale_color_manual(values = c("red", "blue")) + 
+  labs(title = "UMAP projection of the LDA topic model",
+       x = "UMAP1",
+       y = "UMAP2",
+       color = "Equity submission") +
+  theme_minimal()
+
+```
+Let's make the umap plot interactive using plotly
+
+```{r}
+library(plotly)
+
+# Add document names to umap_data
+umap_data$Document = rownames(pc_topic_distributions)
+
+# Create plotly interactive plot
+pc_topic_model_plot <- plot_ly(umap_data, 
+                x = ~UMAP1, 
+                y = ~UMAP2, 
+                color = ~Equity, 
+                colors = c("red", "blue"),
+                hovertext = ~Document,
+                hoverinfo = "text",
+                type = "scatter",
+                mode = "markers") 
+
+pc_topic_model_plot <- layout(pc_topic_model_plot, 
+               title = "UMAP projection of the LDA topic model",
+               xaxis = list(title = "UMAP1"),
+               yaxis = list(title = "UMAP2"),
+               legend = list(title = list(text = '<b> Equity submission </b>')))
+
+pc_topic_model_plot
+
+```
+There are some clusters here interacting with the documents. Let's try K-means clustering and see what happens:
+
+```{r}
+# K-means clustering
+set.seed(42)  # for reproducibility
+k <- 5  # choose the number of clusters
+pc_topic_kmeans_model <- kmeans(pc_topic_distributions, centers = k)
+
+# Add the cluster assignments to umap_data
+umap_data$Cluster <- as.factor(pc_topic_kmeans_model$cluster)
+
+# Convert the Equity column to logical type
+umap_data$Equity <- as.logical(umap_data$Equity)
+
+# Create a new column for the hover text
+umap_data$hover_text <- paste("Submission: ", row.names(umap_data),
+                              "<br>Cluster: ", umap_data$Cluster,
+                              "<br>Equity Submission: ", umap_data$Equity)
+
+plot_ly(umap_data, 
+        x = ~UMAP1, 
+        y = ~UMAP2, 
+        color = ~Cluster, 
+        type = "scatter", 
+        mode = "markers", 
+        text = ~hover_text, 
+        hoverinfo = "text", 
+        marker = list(symbol = ~ifelse(Equity, "circle", "square"))) %>%
+  layout(title = "UMAP projection with K-means clustering")
+
+```
+```{r}
+# updated plotly plot - show equity and non equity
+
+# Create separate equity and non-equity datasets
+umap_data_equity <- umap_data[umap_data$Equity,]
+umap_data_non_equity <- umap_data[!umap_data$Equity,]
+
+# Create separate plots for equity and non-equity data
+pc_topic_model_plot_ctrl <- plot_ly(
+    umap_data_equity, 
+    x = ~UMAP1, 
+    y = ~UMAP2, 
+    color = ~as.factor(Cluster), 
+    type = "scatter", 
+    mode = "markers", 
+    text = ~hover_text, 
+    hoverinfo = "text", 
+    marker = list(symbol = "circle"),
+    name = "Equity"
+)
+
+pc_topic_model_plot_ctrl <- add_trace(
+    pc_topic_model_plot_ctrl,
+    x = ~UMAP1, 
+    y = ~UMAP2, 
+    color = ~as.factor(Cluster), 
+    type = "scatter", 
+    mode = "markers", 
+    text = ~hover_text, 
+    hoverinfo = "text", 
+    data = umap_data_non_equity, 
+    marker = list(symbol = "square"),
+    name = "Non-Equity"
+)
+
+# Display the plot
+pc_topic_model_plot_ctrl
+
+```
+
+## Hierarchical clustering
+
+```{r}
+# Compute the Euclidean distance matrix
+dist_matrix <- dist(pc_topic_distributions_df)
+
+# Perform hierarchical clustering
+hc <- hclust(dist_matrix)
+
+# Cut the dendrogram to get 5 clusters
+clusters <- cutree(hc, k = 5)
+
+# Add the cluster assignments to your data
+pc_topic_distributions_df$Cluster <- as.factor(clusters)
+
+# Compute the dominant topic in each document
+pc_topic_distributions_df$Dominant_Topic <- apply(pc_topic_distributions_df[,1:(ncol(pc_topic_distributions_df)-1)], 1, which.max)
+
+# Create a dendrogram
+dendro <- as.dendrogram(hc)
+
+# Plot the dendrogram
+plot(dendro)
+
+# Color branches by cluster assignment
+dendro_colored <- color_branches(dendro, k = 5)
+plot(dendro_colored)
+
+```
+
+
 # Calcualting similarity measures
 
-## Jaccard similarity
+## Jaccard and cosine similarity
+
+```{r}
+
+```
+
 
 
 ## Jensen-Shannon Divergence
