@@ -955,7 +955,6 @@ pc_topic_distro_row_sums <- rowSums(pc_topic_distributions)
 # Check if the row sums are approximately 1 (within a small tolerance)
 all(abs(pc_topic_distro_row_sums - 1) < 1e-9)
 
-
 ```
 
 # Inspecting the topic modelled distributions
@@ -1170,6 +1169,141 @@ dendro_colored <- color_branches(dendro, k = 5)
 plot(dendro_colored)
 
 ```
+
+## Running the LDA model with fewer topics - test for robustness
+
+```{r}
+# Topic modelling setting K
+
+pc_k_20 <- 20 # number of topics
+#pc_lda_model <- textmodel_lda(dfm, k =k) # doesn't appear to work with quanteda approach LDA not available
+
+pc_lda_model_20 <- LDA(pc_sub_dtm, k = pc_k_20, method = "Gibbs", control = list(seed = 1234))
+
+#view terms
+
+N <- 20
+terms(pc_lda_model_20, N)
+```
+
+```{r}
+# calculate topic distributinos 
+pc_topic_distributions_20 <- posterior(pc_lda_model_20)$topics
+```
+
+
+```{r}
+# UMAP model
+umap_model_20 <- umap::umap(pc_topic_distributions_20)
+
+# Store the embeddings as a data frame
+umap_data_20 <- data.frame(UMAP1 = umap_model_20$layout[,1], 
+                        UMAP2 = umap_model_20$layout[,2],
+                        Equity = as.factor(pc_equity_submissions))
+
+# Add document names to umap_data
+umap_data$Document = rownames(pc_topic_distributions)
+```
+
+
+```{r}
+# K-means clustering
+set.seed(42)  # for reproducibility
+k <- 5  # choose the number of clusters
+pc_topic_kmeans_model_20 <- kmeans(pc_topic_distributions_20, centers = k)
+
+# Add the cluster assignments to umap_data
+umap_data_20$Cluster <- as.factor(pc_topic_kmeans_model_20$cluster)
+
+# Convert the Equity column to logical type
+umap_data_20$Equity <- as.logical(umap_data_20$Equity)
+```
+
+
+```{r}
+# Create a new column for the hover text
+umap_data_20$hover_text <- paste("Submission: ", row.names(umap_data),
+                              "<br>Cluster: ", umap_data$Cluster,
+                              "<br>Equity Submission: ", umap_data$Equity)
+
+# Create separate equity and non-equity datasets
+umap_data_equity_20 <- umap_data_20[umap_data_20$Equity,]
+umap_data_non_equity_20 <- umap_data_20[!umap_data_20$Equity,]
+
+
+
+# Create separate plots for equity and non-equity data
+pc_topic_model_plot_ctrl_20 <- plot_ly(
+    umap_data_equity_20, 
+    x = ~UMAP1, 
+    y = ~UMAP2, 
+    color = ~as.factor(Cluster), 
+    type = "scatter", 
+    mode = "markers", 
+    text = ~hover_text, 
+    hoverinfo = "text", 
+    marker = list(symbol = "circle"),
+    name = "Equity"
+)
+
+pc_topic_model_plot_ctrl_20 <- add_trace(
+    pc_topic_model_plot_ctrl_20,
+    x = ~UMAP1, 
+    y = ~UMAP2, 
+    color = ~as.factor(Cluster), 
+    type = "scatter", 
+    mode = "markers", 
+    text = ~hover_text, 
+    hoverinfo = "text", 
+    data = umap_data_non_equity_20, 
+    marker = list(symbol = "square"),
+    name = "Non-Equity"
+)
+
+# Display the plot
+pc_topic_model_plot_ctrl_20
+
+```
+```{r}
+# Convert the pc_topic_distributions matrix into a data frame
+pc_topic_distributions_20_df <- as.data.frame(pc_topic_distributions_20)
+
+#order the pc_equity_submssions vector so equity submissions come first
+
+pc_equity_order_vector_sorted <- order(pc_equity_submissions, decreasing = TRUE)
+
+# Apply the order to the dataframe and equity submissions
+pc_topic_distributions_20_df <- pc_topic_distributions_20_df[pc_equity_order_vector_sorted, ]
+pc_equity_submissions <- pc_equity_submissions[pc_equity_order_vector_sorted]
+
+# Check order is the same
+#print(names(pc_equity_submissions))
+#print(rownames(pc_topic_distributions_20_df))
+
+# Create a custom color scaling function - logs needed to see differences 
+log_breaks <- function(n) {
+  exp(seq(log(min(topic_distributions_20_df)), log(max(topic_distributions_20_df)), length.out = n))
+}
+my_palette <- colorRampPalette(c("white", "steelblue"))(100) #colorRampPalette(viridis(256))
+
+
+# Convert the logical vector to a factor with specified level order
+pc_equity_submissions_factor <- factor(pc_equity_submissions, levels = c(TRUE, FALSE))
+
+# Create the heatmap with a logarithmic color scale
+pc_topicmodel_heatmap <- heatmaply(pc_topic_distributions_20_df, 
+          breaks = log_breaks,
+          colors = my_palette,
+          Rowv = NULL, # Use the custom dendrogram 
+          Colv = NULL, # Disable column clustering
+          showticklabels = c(FALSE, FALSE), # Hide tick labels for a cleaner look
+          row_side_colors = as.character(pc_equity_submissions_factor), # Use the pc_equity_submissions to color the row side bar - note that the dentrogram is driving the order, so you can't cluster the equity submissions together
+          row_side_palette = c("TRUE" = "black", "FALSE" = "white")) # Color equity submissions black and others white
+
+
+pc_topicmodel_heatmap
+```
+
 
 
 # Calcualting similarity measures
