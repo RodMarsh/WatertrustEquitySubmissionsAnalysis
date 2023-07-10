@@ -27,6 +27,7 @@ library(proxy) # for calculating cosine and jaccard similarity measures
 library(philentropy) # for calculating Jensen-Shannon Divergence
 library(heatmaply) # for creating heatmaps of topic distributions
 library(scales) # scales 
+library(kableExtra) #for tables
 
 # Load data
 # load("./.RData")
@@ -1183,7 +1184,13 @@ pc_lda_model_20 <- LDA(pc_sub_dtm, k = pc_k_20, method = "Gibbs", control = list
 #view terms
 
 N <- 20
-terms(pc_lda_model_20, N)
+pc_lda_model_20_top_terms_df <- as.data.frame(terms(pc_lda_model_20, N))
+
+pc_lda_model_terms_output_table <- pc_lda_model_20_top_terms_df %>%
+  kable("html", caption = "Top Terms per Topic") %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"))
+
+
 ```
 
 ```{r}
@@ -1263,7 +1270,11 @@ pc_topic_model_plot_ctrl_20 <- add_trace(
 # Display the plot
 pc_topic_model_plot_ctrl_20
 
+htmlwidgets::saveWidget(pc_topic_model_plot_ctrl_20, "pc_topic_model_plot_ctrl_20.html")
+
 ```
+
+
 ```{r}
 # Convert the pc_topic_distributions matrix into a data frame
 pc_topic_distributions_20_df <- as.data.frame(pc_topic_distributions_20)
@@ -1300,8 +1311,11 @@ pc_topicmodel_heatmap <- heatmaply(pc_topic_distributions_20_df,
           row_side_colors = as.character(pc_equity_submissions_factor), # Use the pc_equity_submissions to color the row side bar - note that the dentrogram is driving the order, so you can't cluster the equity submissions together
           row_side_palette = c("TRUE" = "black", "FALSE" = "white")) # Color equity submissions black and others white
 
-
+#View the plot
 pc_topicmodel_heatmap
+
+#export the plot
+htmlwidgets::saveWidget(pc_topicmodel_heatmap, "pc_topic_model_heatmap.html")
 ```
 
 
