@@ -5,6 +5,8 @@ output: html_notebook
 
 # Equity text explorations - 
 
+## Required packages
+
 ```{r}
 # required libraries
 
@@ -28,6 +30,9 @@ library(philentropy) # for calculating Jensen-Shannon Divergence
 library(heatmaply) # for creating heatmaps of topic distributions
 library(scales) # scales 
 library(kableExtra) #for tables
+library(ldatuning) # for topic coherence
+library(SnowballC)
+library(spacyr)
 
 # Load data
 # load("./.RData")
@@ -855,7 +860,7 @@ map(pc_efj, ~{
 pc_efj <- c("\\bfair\\w*", "\\bunfair\\w*", "\\bequit\\w*", "\\binequit\\w*", 
             "\\bjust\\w*", "unjust\\w*", "injust\\w*")
 
-# Tokenise the mdba texts and create a corpus
+# Tokenise the pc submissions and create a corpus
 pc_sub_tokens <- corpus(pc_submissions_text$text, docnames = pc_submissions_text$filename) %>%
   tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
 
@@ -895,20 +900,51 @@ token_counts <- all_data %>%
 ```{r}
 # Continue preprocessing
 
-pc_sub_tokens_lc <- tokens_tolower(pc_sub_tokens)
-pc_sub_tokens_lc_no_stop <-  tokens_remove(pc_sub_tokens_lc, stopwords("en"))
+pc_sub_dfm <- pc_sub_tokens %>%
+  tokens_tolower %>% #change to lower case
+  tokens_remove(stopwords("english")) %>% # remove English stop words
+  dfm() %>% # change to a document feature matrix
+  dfm_trim(min_count = 5) # trim infrequent word to reduce computational time in topic modelling
 
-# Create a document feature matrix
+#pc_lda_model <- textmodel_lda(dfm, k =k) # doesn't appear to work with quanteda approach LDA not available need to change dfm to a dtm and use the topicmodels package
 
-pc_sub_dfm <- dfm(pc_sub_tokens_lc_no_stop) # for the quanteda textmodel_lda, which no longer seems to exist - even though it is in the documentation 
 pc_sub_dtm <- convert(pc_sub_dfm, to = "topicmodels")
 ```
+
+## Using SpaCy to lemmatise text 
+
+```{r}
+
+# Start Spacy in R
+spacy_initialize(model = 'en_core_web_sm')
+
+
+
+
+
+# Assuming 'corpus' is your quanteda Corpus object
+# Extract the texts from the corpus, lemmatize them, and create a new corpus
+pc_sub_tokens_lemma <- texts(pc_sub_tokens) %>%
+  sapply(lemmatize_spacy) %>%
+  corpus()
+
+# Perform lower-casing, stopword removal, and stemming
+pc_sub_tokens_lemma <- pc_sub_tokens_lemma %>%
+  tokens_tolower() %>%
+  tokens_remove(stopwords("english")) %>%
+  tokens_wordstem()
+
+# Create DFM
+dfm <- dfm(pc_sub_tokens_lemma)
+
+```
+
 
 ```{r}
 # Topic modelling setting K
 
 pc_k <- 40 # number of topics
-#pc_lda_model <- textmodel_lda(dfm, k =k) # doesn't appear to work with quanteda approach LDA not available
+
 
 pc_lda_model <- LDA(pc_sub_dtm, k = pc_k, method = "Gibbs", control = list(seed = 1234))
 
@@ -1190,7 +1226,9 @@ pc_lda_model_terms_output_table <- pc_lda_model_20_top_terms_df %>%
   kable("html", caption = "Top Terms per Topic") %>%
   kable_styling(bootstrap_options = c("striped", "condensed"))
 
+pc_lda_model_terms_output_table
 
+# See the table_report.R script and rmd docs for exporting this kableExtra table.
 ```
 
 ```{r}
@@ -1318,6 +1356,59 @@ pc_topicmodel_heatmap
 htmlwidgets::saveWidget(pc_topicmodel_heatmap, "pc_topic_model_heatmap.html")
 ```
 
+# Testing for an "optimal" number of topics 
+
+## Coherence scores
+
+Coherence score captures semantic similarity between high scoring words in the topic. A higher coherence score indicates that the topics are more human-interpretable.
+
+```{r}
+# Load necessary packages
+library(ldatuning)
+library(SnowballC)
+
+# Possible numbers of topics to test
+test_k <- seq(5, 40, by = 5) 
+
+# Find the models with different numbers of topics using LDA
+topic_models <- lapply(test_k, function(i) LDA(pc_sub_dtm, k = i, control = list(seed = 1234)))
+
+# Calculate the Grün and Hornik (2011) topic coherence
+gh_coherence <- sapply(topic_models, GH_coherence, pc_sub_dtm = pc_sub_dtm)
+
+# Calculate the Mimno et al. (2011) topic coherence
+mimno_coherence <- sapply(topic_models, mimno_coherence, pc_sub_dtm = pc_sub_dtm)
+
+# Calculate the Newman et al. (2010) topic coherence
+newman_coherence <- sapply(topic_models, newman_coherence, pc_sub_dtm = pc_sub_dtm, measure = "UMass")
+
+# Calculate the Röder et al. (2015) topic coherence
+roeder_coherence <- sapply(topic_models, roeder_coherence, pc_sub_dtm = pc_sub_dtm, measure = "c_v")
+
+# Plot number of topics against coherence measures
+plot(test_k, gh_coherence, type = "b", xlab = "Number of topics", ylab = "Coherence measure",
+     main = "Optimal number of topics", col = "red", lwd = 2)
+
+lines(test_k, mimno_coherence, type = "b", col = "green", lwd = 2)
+lines(test_k, newman_coherence, type = "b", col = "blue", lwd = 2)
+lines(test_k, roeder_coherence, type = "b", col = "purple", lwd = 2)
+
+legend("topleft", legend = c("GH", "Mimno", "Newman_UMass", "Roeder_c_v"), col = c("red", "green", "blue", "purple"), lty = 1, lwd = 2)
+
+```
+
+## Alternative topic modelling approach using Online Variational Bayes
+
+Variational methods are generally faster than Gibbs sampling (which is used by LDA() in the topicmodels package), although they may not perform as well on some metrics. The text2vec package in R provides a function for online variational Bayes LDA.
+
+```{r}
+library(text2vec)
+
+OVB_pc_lda_model = LDA$new(n_topics = 10, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+doc_topic_distr = OVB_pc_lda_model$fit_transform(x = pc_sub_dtm, n_iter = 1000, convergence_tol = 0.001, n_check_convergence = 25, progressbar = FALSE)
+
+
+```
 
 
 # Calcualting similarity measures
