@@ -37,6 +37,7 @@ library(spacyr)
 # Load data
 # load("./.RData")
 ```
+
 # MDBA northern basin amendments
 
 
@@ -914,31 +915,50 @@ pc_sub_dtm <- convert(pc_sub_dfm, to = "topicmodels")
 ## Using SpaCy to lemmatise text 
 
 ```{r}
+# Set up the python environment
+
+library(reticulate)
+use_condaenv("base", required = TRUE)
 
 # Start Spacy in R
 spacy_initialize(model = 'en_core_web_sm')
+```
 
 
 
+```{r}
+# Convert tokens to a list
+pc_sub_list <- as.list(pc_sub_tokens)
 
+# Concatenate the tokens in each document
+pc_sub_texts <- pc_sub_list %>%
+  map_chr(paste, collapse = " ")
 
-# Assuming 'corpus' is your quanteda Corpus object
-# Extract the texts from the corpus, lemmatize them, and create a new corpus
-pc_sub_tokens_lemma <- texts(pc_sub_tokens) %>%
-  sapply(lemmatize_spacy) %>%
-  corpus()
+# Parse the texts
+pc_sub_texts_parsed <- sapply(pc_sub_texts, function(x) {
+  parsed_text <- spacy_parse(x)
+  parsed_text$lemma %>%
+    paste(collapse = " ")
+})
 
-# Perform lower-casing, stopword removal, and stemming
-pc_sub_tokens_lemma <- pc_sub_tokens_lemma %>%
-  tokens_tolower() %>%
-  tokens_remove(stopwords("english")) %>%
-  tokens_wordstem()
+# Create pattern to match any punctuation
+pattern_punct <- "[^[:alnum:][:space:]]+"
 
-# Create DFM
-dfm <- dfm(pc_sub_tokens_lemma)
+# Tokenize the parsed texts
+pc_sub_tokens_lemmatized <- tokens(pc_sub_texts_parsed, what = 'word') %>%
+  tokens_remove(pattern_punct)
+
+# Create a dtm of lemmatised tokens
+
+pc_sub_tokens_lemmatized_dfm <- dfm(pc_sub_tokens_lemmatized)
+
+pc_sub_tokens_lemmatized_dtm <- convert(pc_sub_tokens_lemmatized_dfm, to = "topicmodel")
+
 
 ```
 
+
+## Topic modelling
 
 ```{r}
 # Topic modelling setting K
@@ -954,6 +974,29 @@ N <- 20
 terms(pc_lda_model, N)
 
 ```
+
+## Topic modelling with lemmatised text
+
+```{r}
+
+pc_k <- 20 # number of topics
+
+
+pc_lda_model_lemma <- LDA(pc_sub_tokens_lemmatized_dtm, k = pc_k, method = "Gibbs", control = list(seed = 1234))
+
+#view terms
+
+N <- 20
+pc_lda_model_20_top_terms_lemma_df <- as.data.frame(terms(pc_lda_model_lemma, N))
+
+```
+
+
+```{r}
+
+```
+
+
 
 ```{r}
 # Identify "equity" submissions - 
@@ -1222,14 +1265,69 @@ pc_lda_model_20 <- LDA(pc_sub_dtm, k = pc_k_20, method = "Gibbs", control = list
 N <- 20
 pc_lda_model_20_top_terms_df <- as.data.frame(terms(pc_lda_model_20, N))
 
-pc_lda_model_terms_output_table <- pc_lda_model_20_top_terms_df %>%
+pc_lda_model_terms_output_table_20 <- pc_lda_model_20_top_terms_df %>%
   kable("html", caption = "Top Terms per Topic") %>%
   kable_styling(bootstrap_options = c("striped", "condensed"))
 
-pc_lda_model_terms_output_table
+pc_lda_model_terms_output_table_20
 
-# See the table_report.R script and rmd docs for exporting this kableExtra table.
+# See the table_report.R script and rmd docs for exporting this kableExtra table in the folder for this project.
+
+
 ```
+
+```{r}
+# Topic modelling setting K at various levels
+
+library(kableExtra)
+library(rmarkdown)
+
+# Possible numbers of topics to test
+test_k <- seq(5, 15, by = 5)
+names(test_k) <- as.character(test_k)
+# Find the models with different numbers of topics using LDA
+pc_topic_models <- test_k %>% map(~ LDA(pc_sub_dtm, k = .x, method = "Gibbs", control = list(seed = 1234)))
+
+#pc_topic_models <- test_k %>% map(~ LDA(pc_sub_dtm, k = .x, control = list(seed = 1234))) # this defaults to  Variational Expectation-Maximization (VEM), a faster, but less accurate approach - noticably less accurate see examples in output folder
+
+# Create a list of data frames from topic models 
+
+pc_topic_data_frames <- pc_topic_models %>% map(~ as.data.frame(terms(.x, 20)))
+
+# Create new subdirectory
+
+dir.create("productivity_commission_submissions_NWR_2020/topic_models")
+
+# Create HTML files for each topic model
+
+# Create HTML files for each topic model
+# Create HTML files for each topic model
+pc_topic_data_frames %>% 
+  map2(names(test_k), function(df, i) {
+    # Create a temporary .Rmd file in the desired directory
+    rmd_file <- tempfile(tmpdir = "productivity_commission_submissions_NWR_2020/topic_models", fileext = ".Rmd")
+    
+    # Write an .Rmd file with inline R code
+    writeLines(
+      c("---",
+        "title: 'Productivity Commission 2020 National Water Reform Inquiry - Submission topic model'",
+        "output: html_document",
+        "---",
+        "",
+        "`r kableExtra::kable_styling(knitr::kable(df, 'html'))`"),
+      rmd_file)
+    
+    # Render the .Rmd file to HTML
+    rmarkdown::render(rmd_file, output_file = paste0("Topic_Model_", i, "_topics.html"))
+
+    # Delete the temporary .Rmd file
+    file.remove(rmd_file)
+  })
+
+
+
+```
+
 
 ```{r}
 # calculate topic distributinos 
@@ -1367,8 +1465,9 @@ Coherence score captures semantic similarity between high scoring words in the t
 library(ldatuning)
 library(SnowballC)
 
-# Possible numbers of topics to test
-test_k <- seq(5, 40, by = 5) 
+# Possible numbers of topics to test - seems like this is too computationally intensive for my desktop - I halted the approach after 10 minutes waiting - Sam advises that this is probably best done manually and qualitatively 
+
+test_k <- seq(5, 20, by = 5) 
 
 # Find the models with different numbers of topics using LDA
 topic_models <- lapply(test_k, function(i) LDA(pc_sub_dtm, k = i, control = list(seed = 1234)))
