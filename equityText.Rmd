@@ -1328,6 +1328,142 @@ pc_topic_data_frames %>%
 
 ```
 
+```{r}
+
+# identify the equity submissions and incorporate into the topic models
+
+pc_topic_models <- map(pc_topic_models, function(model) {
+  doc_topic_distr <- as.data.frame(posterior(model)$topics)
+  doc_topic_distr$equity_submission <- pc_equity_submissions[rownames(doc_topic_distr)]
+  doc_topic_distr
+})
+
+```
+
+
+
+```{r}
+# Define function to create heatmap
+plot_heatmap <- function(model, model_index) {
+  # Get the document-topic distributions from the model
+  doc_topic_distributions <- posterior(model)$topics
+
+  # Convert to data frame and tidy up for ggplot
+  doc_topic_distributions <- as.data.frame(doc_topic_distributions)
+  doc_topic_distributions$document <- rownames(doc_topic_distributions)
+  doc_topic_distributions_long <- reshape2::melt(doc_topic_distributions, id.vars = "document", 
+                                                 variable.name = "topic", value.name = "proportion")
+
+  # Create the plot
+  p <- ggplot(doc_topic_distributions_long, aes(x = topic, y = document, fill = proportion)) +
+    geom_tile(show.legend = FALSE) +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_blank()) +
+    labs(x = "Topic", y = "", fill = "Proportion", 
+         title = paste0("Document-Topic Distributions for Model ", model_index))
+  
+  # Convert to Plotly for interactivity
+  p <- ggplotly(p, tooltip = c("y", "fill"))
+  
+  # Return the plot
+  return(p)
+}
+
+# Apply the function to each model
+pc_plots <- map2(pc_topic_models, 1:length(pc_topic_models), plot_heatmap)
+
+# Now `plots` is a list of Plotly objects, each one is a heatmap for a different model.
+# You can view a plot by indexing into the list, like so:
+print(pc_plots[[2]])  # Print the first plot
+```
+
+```{r}
+# HEATMAP WITH TOOLTIP FOR DOCUMENT NAME AND EQUITY MENTION STATUS
+
+# Define function to create heatmap
+plot_heatmap <- function(model, model_index) {
+  # Get the document-topic distributions from the model
+  doc_topic_distributions <- as.data.frame(posterior(model)$topics)
+  doc_topic_distributions$document <- rownames(doc_topic_distributions)
+
+  # Add the equity_submission status
+  doc_topic_distributions$equity_submission <- pc_equity_submissions[doc_topic_distributions$document, ]
+
+  # Convert to data frame and tidy up for ggplot
+  doc_topic_distributions_long <- reshape2::melt(doc_topic_distributions, id.vars = c("document", "equity_submission"), 
+                                                 variable.name = "topic", value.name = "proportion")
+
+  # Create the plot
+  p <- ggplot(doc_topic_distributions_long, aes(x = topic, y = document, fill = proportion, 
+                                                text = paste('Document:', document, '<br>',
+                                                             'Equity Submission:', equity_submission, '<br>',
+                                                             'Proportion:', round(proportion, 4)))) +
+    geom_tile(show.legend = FALSE) +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_blank()) +
+    labs(x = "Topic", y = "", fill = "Proportion", 
+         title = paste0("Document-Topic Distributions for Model ", model_index))
+
+  # Convert to Plotly for interactivity
+  p <- ggplotly(p, tooltip = "text")
+
+  # Return the plot
+  return(p)
+}
+
+# Apply the function to each model
+pc_plots <- map2(pc_topic_models, 1:length(pc_topic_models), plot_heatmap)
+
+
+pc_plots[[1]]
+
+```
+
+
+```{r}
+# REORDERING IN HEAT MAP - NOT YET WORKING
+
+plot_heatmap <- function(model, model_index) {
+  # Get the document-topic distributions from the model
+  doc_topic_distributions <- as.data.frame(posterior(model)$topics)
+  
+  # Add equity submission status
+  doc_topic_distributions$equity_submission <- as.logical(pc_equity_submissions[rownames(doc_topic_distributions)])
+
+  # Convert to data frame and tidy up for ggplot
+  doc_topic_distributions$document <- rownames(doc_topic_distributions)
+  doc_topic_distributions_long <- reshape2::melt(doc_topic_distributions, id.vars = c("document", "equity_submission"),
+                                                 variable.name = "topic", value.name = "proportion")
+
+  # Create the plot
+  p <- ggplot(doc_topic_distributions_long, aes(x = topic, y = document, fill = proportion)) +
+    geom_tile(aes(fill = ifelse(equity_submission, proportion, NA)), show.legend = FALSE) +
+    geom_tile(aes(fill = ifelse(!equity_submission, proportion, NA)), show.legend = FALSE) +
+    scale_fill_gradientn(colors = c("white", "red"), na.value = "white", name = "Equity Submissions") +
+    scale_fill_gradientn(colors = c("white", "steelblue"), na.value = "white", name = "Non-Equity Submissions") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_blank()) +
+    labs(x = "Topic", y = "", title = paste0("Document-Topic Distributions for Model ", model_index))
+  
+  # Convert to Plotly for interactivity
+  p <- ggplotly(p, tooltip = c("y", "fill", "equity_submission"))
+  
+  # Return the plot
+  return(p)
+}
+
+# Apply the function to each model
+pc_plots <- map2(pc_topic_models, 1:length(pc_topic_models), plot_heatmap)
+
+
+
+pc_plots[[1]]
+
+```
+
+
 
 ```{r}
 # calculate topic distributinos 
