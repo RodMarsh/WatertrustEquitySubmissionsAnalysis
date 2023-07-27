@@ -35,7 +35,7 @@ library(SnowballC)
 library(spacyr)
 
 # Load data
-# load("./.RData")
+ load("./.RData")
 ```
 
 # MDBA northern basin amendments
@@ -785,7 +785,7 @@ directories <- c("productivity_commission_submissions_NWR_2020/brief",
 
 # Function to list and read PDFs
 read_pdfs_in_dir <- function(dir) {
-  list.files(path = dir, pattern = "*.pdf", full.names = TRUE) %>% 
+  list.files(path = dir, pattern = "(?i)\\.pdf$", full.names = TRUE) %>% 
     map_df(~{
       tryCatch({
         text <- pdf_text(.x)
@@ -1823,5 +1823,191 @@ print(top_cooccur)
 
 ```
 
+# Sefton review submissions
+## Bring in text from PDFs
 
+```{r}
+
+sefton_directory <- "docs_sefton"
+
+sefton_submissions_text <- map_df(sefton_directory, read_pdfs_in_dir)
+
+```
+
+```{r}
+
+# create subdirectory
+sefton_concord_subdirectory <- "output_sefton/sefton_concordance"
+
+dir.create(sefton_concord_subdirectory, recursive = T, showWarnings = F)
+
+# Define key word patterns - done as pc_efj
+
+# Tokenise the submissions and create a corpus
+sefton_sub_tokens <- corpus(sefton_submissions_text$text, docnames = sefton_submissions_text$filename) %>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
+
+# Iterate over the keyword patterns and export as excel files, and collect data into one dataframe
+sefton_all_data <- map_dfr(pc_efj, ~{
+  # Generate KWIC concordance for the current pattern
+  kwic_concordance <- sefton_sub_tokens %>%
+    kwic(pattern = .x, valuetype = "regex", window = 30, case_insensitive = TRUE) %>%
+    as.data.frame()
+
+  # Create a filename for the Excel file
+  file_name <- paste0(sefton_concord_subdirectory, "/", "sefton_concordance_", gsub("\\\\w\\*", "", .x), ".xlsx")
+
+  # Export the KWIC concordance to Excel
+  write_xlsx(kwic_concordance, path = file_name)
+  
+  # Return the data
+  tibble(filename = kwic_concordance$docname,
+         keyword = .x,
+         token = tolower(kwic_concordance$keyword))
+})
+
+# Count the number of documents that contain each string pattern
+sefton_doc_counts <- sefton_all_data %>%
+  group_by(token) %>%
+  summarise(num_docs = n_distinct(filename), 
+            proportion = num_docs / n_distinct(sefton_submissions_text$filename))
+
+# Count the number of times each string pattern appears in each document
+sefton_token_counts <- sefton_all_data %>%
+  count(filename, token)
+
+
+```
+
+# Scraping the Guardian
+
+```{r}
+# additional packages working from https://ladal.edu.au/webcrawling.html
+
+library(readtext)
+library(flextable)
+library(webdriver)
+# activate klippy for copy-to-clipboard button
+klippy::klippy()
+```
+
+```{r}
+#Start phantomJS instances
+
+pjs_instance <- run_phantomjs()
+pjs_session <- Session$new(port = pjs_instance$port)
+```
+
+
+```{r}
+mdb_guardian_url <- "https://www.theguardian.com/australia-news/murray-darling-basin"
+# go to URL
+pjs_session$go(mdb_guardian_url)
+# render page
+guardian_mdb_rendered_source <- pjs_session$getSource()
+# download text and parse the source code into an XML object
+guardian_mdb_html_document <- read_html(guardian_mdb_rendered_source)
+
+page_numbers <- 1:18
+mdb_guardian_base_url <- "https://www.theguardian.com/australia-news/murray-darling-basin?page="
+mdb_guardian_paging_urls <- paste0(mdb_guardian_base_url, page_numbers)
+
+
+
+guardian_mdb_links <- mdb_guardian_paging_urls %>%
+  map(function(url) {
+    # download and parse single overview page
+    pjs_session$go(url)
+    rendered_source <- pjs_session$getSource()
+    html_document <- read_html(rendered_source)
+    # extract links to articles
+    links <- html_document %>%
+      html_nodes(xpath = "//div[contains(@class, 'fc-item__container')]/a") %>%
+      html_attr(name = "href")
+      
+    # return links
+    return(links)
+  }) %>% 
+  unlist()  # to flatten the list into a vector
+
+# inspect 
+guardian_mdb_links
+```
+
+```{r}
+# Webscraper from https://ladal.edu.au/webcrawling.html
+
+scrape_guardian_article <- function(url) {
+  # start PhantomJS
+  pjs_session$go(url)
+  rendered_source <- pjs_session$getSource()
+  # read raw html
+  html_document <- read_html(rendered_source)
+  # extract title
+  title <- html_document %>%
+    rvest::html_node("h1") %>%
+    rvest::html_text(trim = T)
+  # extract text
+  text <- html_document %>%
+    rvest::html_node("p") %>%
+    rvest::html_text(trim = T)
+  # extract date
+  date <- url %>%
+    stringr::str_replace_all(".*([0-9]{4,4}/[a-z]{3,4}/[0-9]{1,2}).*", "\\1")
+  # generate data frame from results
+  article <- data.frame(
+    url = url,
+    date = date,
+    title = title,
+    body = text
+  )
+  
+  return(article)
+  
+}
+```
+
+```{r}
+guardian_mdb_articles_2015_2023 <- guardian_mdb_links %>%
+  map_dfr(function(link) {
+    # scrape website
+    article <- scrape_guardian_article(link)
+    # return current article data.frame
+    return(article)
+  })
+
+```
+
+```{r}
+# Pulling out concordances from the Guardian
+
+guardian_subdirectory <- "guardian_articles/guardian_concordance"
+
+dir.create(guardian_subdirectory, recursive = T, showWarnings = F)
+
+# Tokenise the mdba texts and create a corpus
+guardian_tokens <- corpus(guardian_mdb_articles_2015_2023$body, docnames = guardian_mdb_articles_2015_2023$url) %>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
+
+# Iterate over the keyword patterns and export as excel files
+map(pc_efj, ~{
+  # Generate KWIC concordance for the current pattern
+  kwic_concordance <- guardian_tokens %>%
+    kwic(pattern = .x, valuetype = "regex", window = 30, case_insensitive = TRUE) %>%
+    as.data.frame()
+
+  # Create a filename for the Excel file
+  file_name <- paste0(guardian_subdirectory, "/", "guardian_concordance_", gsub("\\\\w\\*", "", .x), ".xlsx")
+
+  # Export the KWIC concordance to Excel
+  write_xlsx(kwic_concordance, path = file_name)
+})
+```
+
+```{r}
+
+
+
+
+```
 
