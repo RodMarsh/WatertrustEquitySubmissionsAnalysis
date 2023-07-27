@@ -1986,8 +1986,12 @@ guardian_subdirectory <- "guardian_articles/guardian_concordance"
 dir.create(guardian_subdirectory, recursive = T, showWarnings = F)
 
 # Tokenise the mdba texts and create a corpus
-guardian_tokens <- corpus(guardian_mdb_articles_2015_2023$body, docnames = guardian_mdb_articles_2015_2023$url) %>%
-  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
+guardian_tokens <- quanteda::corpus(guardian_mdb_articles_2015_2023,
+  docid_field = "url",
+  text_field = "body",
+  meta = list(),
+  unique_docnames = TRUE) %>%
+  tokens(what = "word", remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE)
 
 # Iterate over the keyword patterns and export as excel files
 map(pc_efj, ~{
@@ -2005,7 +2009,23 @@ map(pc_efj, ~{
 ```
 
 ```{r}
+ guardian_dfm <- guardian_tokens %>% 
+  tokens_tolower %>% #change to lower case
+  tokens_remove(stopwords("english")) %>% # remove English stop words
+  dfm() %>% # change to a document feature matrix
+  dfm_trim(min_count = 5) 
 
+guardian_dtm <- convert(guardian_dfm, to = "topicmodels")
+
+```
+
+```{r}
+guardian_lda_model <- LDA(guardian_dtm, k =5, method = "Gibbs", control = list(seed = 1234))
+
+#view terms
+
+N <- 20
+terms(guardian_lda_model, N)
 
 
 
