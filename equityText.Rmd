@@ -33,6 +33,11 @@ library(kableExtra) #for tables
 library(ldatuning) # for topic coherence
 library(SnowballC)
 library(spacyr)
+library(readtext)
+library(flextable)
+library(webdriver)
+# activate klippy for copy-to-clipboard button
+klippy::klippy()
 
 # Load data
  load("./.RData")
@@ -2020,12 +2025,101 @@ guardian_dtm <- convert(guardian_dfm, to = "topicmodels")
 ```
 
 ```{r}
-guardian_lda_model <- LDA(guardian_dtm, k =5, method = "Gibbs", control = list(seed = 1234))
+guardian_lda_model <- LDA(guardian_dtm, k =15, method = "Gibbs", control = list(seed = 1234))
 
 #view terms
 
 N <- 20
 terms(guardian_lda_model, N)
+
+
+
+```
+
+# Comparing PC submissions and Guardian articles for similarity using UMAP
+
+```{r}
+guardian_umap <- umap(guardian_dfm)
+pc_umap <- umap(pc_sub_dfm)
+
+
+```
+
+```{r}
+# Prepare data for ggplot
+guardian_umap_data <- data.frame(UMAP1 = guardian_umap$layout[,1], UMAP2 = guardian_umap$layout[,2], Corpus = "Guardian")
+pc_umap <- data.frame(UMAP1 = pc_umap$layout[,1], UMAP2 = pc_umap$layout[,2], Corpus = "PC")
+pc_guardian_compare_umap <- rbind(guardian_umap_data, pc_umap)
+
+# Plot
+ggplot(pc_guardian_compare_umap, aes(x = UMAP1, y = UMAP2, color = Corpus)) + 
+  geom_point(alpha = 0.6, size = 3) + 
+  theme_minimal() +
+  ggtitle("UMAP Guardian and Productivity Commisison corpora")
+```
+
+```{r}
+# Calculate type-token ratio for each DFM
+guardian_ttr <- ntype(guardian_dfm) / ntoken(guardian_dfm)
+pc_sub_ttr <- ntype(pc_sub_dfm) / ntoken(pc_sub_dfm)
+
+print(paste("Type-Token Ratio for Corpus 1: ", guardian_ttr))
+print(paste("Type-Token Ratio for Corpus 2: ", pc_sub_ttr))
+
+# Note that the type-token ratio will be closer to 1 for shorter texts - probably not meaningful for a comparison between newspaper articles and submissions
+
+
+```
+
+
+
+
+# ABC MDB articles scraping
+
+```{r}
+#Start phantomJS instances
+
+pjs_instance <- run_phantomjs()
+pjs_session <- Session$new(port = pjs_instance$port)
+```
+
+```{r}
+mdb_abc_url <- "https://discover.abc.net.au/index.html#/?query=murray%20darling%20basin"
+# go to URL
+pjs_session$go(mdb_abc_url)
+# render page
+abc_mdb_rendered_source <- pjs_session$getSource()
+# download text and parse the source code into an XML object
+abc_mdb_html_document <- read_html(abc_mdb_rendered_source)
+
+page_numbers <- 1:639
+mdb_abc_base_url <- "https://discover.abc.net.au/index.html#/?query=murray%20darling%20basin&page="
+mdb_abc_paging_urls <- paste0(mdb_abc_base_url, page_numbers)
+```
+
+```{r}
+
+# This doesn't work - wrong structure for ABC page, which seems to be using more javascript to load and display content
+
+
+abc_mdb_links <- mdb_abc_paging_urls %>%
+  map(function(url) {
+    # download and parse single overview page
+    pjs_session$go(url)
+    rendered_source <- pjs_session$getSource()
+    html_document <- read_html(rendered_source)
+    # extract links to articles
+    links <- html_document %>%
+      html_nodes(xpath = "//div/h2/a") %>%
+      html_attr(name = "href")
+      
+    # return links
+    return(links)
+})%>% 
+  unlist()  # to flatten the list into a vector
+
+# inspect 
+abc_mdb_links #provides an empty list
 
 
 
