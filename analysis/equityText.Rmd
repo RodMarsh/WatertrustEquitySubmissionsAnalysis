@@ -5,6 +5,10 @@ output: html_notebook
 
 # Equity text explorations - 
 
+This notebook represents the initial set of explorations used to start working
+out different features and approaches that might be relevant for the
+different inquiry datasets.
+
 ## Required packages
 
 ```{r}

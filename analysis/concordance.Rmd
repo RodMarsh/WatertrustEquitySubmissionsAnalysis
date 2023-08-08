@@ -1,0 +1,94 @@
+# Concordance with document level annotations
+
+This notebooks prepares concordances for a specified set of keywords, and annotates
+them with document level statistics - a submission that mentions "unfair" is
+more likely to be useful as a whole than a document with just a single mention
+of one of the keywords.
+
+## Install dependencies
+
+This only needs to be run once.
+
+```{r eval=FALSE}
+install.packages("quanteda")
+install.packages("RSQLite")
+install.packages("writexl")
+```
+
+# Load Libraries
+
+Note that this is intentionally a minimal script so we aren't actually going
+to do much outside loading data and some light transformation.
+
+```{r}
+library(DBI)
+library(quanteda)
+library(writexl)
+```
+# Connect and load from the database
+
+```{r}
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submissions <- dbGetQuery(inquiries, 'SELECT * FROM submission')
+
+# Generate a single column unique id - this is the composite primary key
+# defined in the database, so will always be unique. This is used to tie
+# together results at different granularities.
+submissions$doc_id <- paste(submissions$inquiry_shortname, submissions$submission_id)
+submission_corpus <- corpus(submissions, text_field="text", docid_field = "doc_id")
+
+dbDisconnect(inquiries)
+
+print(submission_corpus)
+```
+
+# Prepare Concordances
+
+We're going to create two output files for closer reading:
+
+1. A file of concordances, showing where each of the selected keywords occurs
+in each file, along with the context of which file they came from.
+2. A file describing how many times each keyword is used in each file, to enable
+sorting for documents that mention the keywords many times. 
+
+```{r}
+probe_words = c(
+  "equity",
+  "equitable",
+  "inequitable",
+  "inequity",
+  "fair",
+  "unfair",
+  "fairness",
+  "unfairly",
+  "fairly",
+  "just",
+  "justice",
+  "injustice",
+  "unjust"  
+)
+
+# Tokenise and prepare the DFM - note we're leaving the text more or less for
+# now as we're only interested in a token count and raw concordances.
+corpus_tokens <- tokens(submission_corpus)
+corpus_dfm <- dfm(corpus_tokens)
+
+# Select columns of the probe words - this is for sorting the submissions table.
+probe_counts <- dfm_select(corpus_dfm, pattern = probe_words) %>% convert(to = "data.frame")
+
+# Create the concordances for selected words
+concordances <- kwic(corpus_tokens, probe_words, window=25) %>% as.data.frame()
+
+# Merge the concordances with the document level count for sorting.
+# Also add the document level variables
+concordance_with_agg <- submissions[,c("doc_id", "url", "submitter", "inquiry_shortname")] %>%
+  merge(probe_counts, by="doc_id") %>%
+  merge(concordances, by.x = "doc_id", by.y = "docname")
+   
+write_xlsx(concordance_with_agg, "../results/concordance_with_doc_agg.xlsx")
+
+```
+
+
+
+

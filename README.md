@@ -47,3 +47,7 @@ python prepare_inquiries.py
 - `inquiries/prepare_inquiries.py` - the main script for downloading and preparing data. This script is driven by `inquiries/inquiries.csv` and the associated `inquiries/<inquiry_shortname>.csv` files.
 - `inquiries/per_inquiry_wrangling/<inquiry_shortname>.py` - any per inquiry data manipulation necessary to generate the relevant index file.
 
+
+## Analysis
+
+All analysis code is in R notebooks in the `analysis` folder. They all assume that the data is read from the `inquiries/inquiries.db` SQLite database and that the `inquiries/prepare_inquiries.py` has been run.
