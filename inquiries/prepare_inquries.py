@@ -51,6 +51,8 @@ def extract_text_from_file(submission_file, file_format):
 
     if file_format == "pdf":
         text = textract.process(submission_file)
+    else:
+        raise TypeError("Not a supported file_format")
 
     return text
 
@@ -90,11 +92,16 @@ with open("inquiries.csv", "r") as inquiries_file:
                 if not os.path.exists(download_to) and public_submission:
                     r = requests.get(submission["submission_url"], allow_redirects=True)
 
+                    # Make sure to actually check the status code, not
+                    # just write a forbidden response to the output.
+                    r.raise_for_status()
                     with open(temp, "wb") as temp_file:
                         temp_file.write(r.content)
 
                     os.rename(temp, download_to)
-                    time.sleep(random.random() * 5)
+                    # Wait at least 2 seconds, and on average 10 seconds with
+                    # some jitter.
+                    time.sleep(2 + random.random() * 16)
 
                 # Extract text from the submission and stuff in the database
                 if public_submission:
