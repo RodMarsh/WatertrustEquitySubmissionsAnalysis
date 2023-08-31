@@ -57,6 +57,10 @@ def extract_text_from_file(submission_file, file_format):
     return text
 
 
+# Need to use a session to keep cookies
+session = requests.Session()
+
+
 with open("inquiries.csv", "r") as inquiries_file:
     inquiries = csv.DictReader(inquiries_file, quoting=csv.QUOTE_ALL)
 
@@ -90,7 +94,7 @@ with open("inquiries.csv", "r") as inquiries_file:
 
                 # Download if a link is present and the file is not already present.
                 if not os.path.exists(download_to) and public_submission:
-                    r = requests.get(submission["submission_url"], allow_redirects=True)
+                    r = session.get(submission["submission_url"], allow_redirects=True)
 
                     # Make sure to actually check the status code, not
                     # just write a forbidden response to the output.
