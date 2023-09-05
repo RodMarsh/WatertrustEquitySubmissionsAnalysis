@@ -50,7 +50,9 @@ def extract_text_from_file(submission_file, file_format):
     """Extract plaintext from the given submission file."""
 
     if file_format == "pdf":
-        text = textract.process(submission_file)
+        text = textract.process(submission_file).decode("utf8")
+    elif file_format == "skip":
+        text = ""
     else:
         raise TypeError("Not a supported file_format")
 
@@ -58,7 +60,10 @@ def extract_text_from_file(submission_file, file_format):
 
 
 # Need to use a session to keep cookies
+headers = {"From": "s.hames@uq.edu.au"}
+
 session = requests.Session()
+session.headers = headers
 
 
 with open("inquiries.csv", "r") as inquiries_file:
@@ -93,7 +98,11 @@ with open("inquiries.csv", "r") as inquiries_file:
                 public_submission = bool(submission["submission_url"])
 
                 # Download if a link is present and the file is not already present.
-                if not os.path.exists(download_to) and public_submission:
+                if (
+                    not os.path.exists(download_to)
+                    and public_submission
+                    and submission_format != "skip"
+                ):
                     r = session.get(submission["submission_url"], allow_redirects=True)
 
                     # Make sure to actually check the status code, not
@@ -109,9 +118,7 @@ with open("inquiries.csv", "r") as inquiries_file:
 
                 # Extract text from the submission and stuff in the database
                 if public_submission:
-                    text = extract_text_from_file(
-                        download_to, submission_format
-                    ).decode("utf8")
+                    text = extract_text_from_file(download_to, submission_format)
                 else:
                     text = ""
 
