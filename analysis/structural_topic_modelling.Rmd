@@ -1,0 +1,75 @@
+---
+title: "Structural Topic Model of Water Inquiries"
+output: html_notebook
+---
+
+```{r eval=FALSE}
+install.packages("stm")
+install.packages("RSQLite")
+install.packages("writexl")
+```
+
+```{r}
+library(DBI)
+library(stm)
+library(writexl)
+```
+
+```{r}
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submissions <- dbGetQuery(inquiries, 'SELECT inquiry_shortname, text FROM submission')
+
+# Generate a single column unique id - this is the composite primary key
+# defined in the database, so will always be unique. This is used to tie
+# together results at different granularities.
+submissions$doc_id <- paste(submissions$inquiry_shortname, submissions$submission_id)
+
+dbDisconnect(inquiries)
+
+head(submissions)
+```
+
+```{r}
+# Use standard STM text preprocessing functions - these are actually not too bad.
+processed <- textProcessor(submissions$text, metadata=submissions, stem=FALSE)
+out <- prepDocuments(processed$documents, processed$vocab, processed$meta, lower.thresh = 10)
+```
+
+```{r}
+# Note - using random initialisation as the default spectral requires a lot of 
+# memory even for this tiny problem.
+inquiry_stm_fit <- stm(documents = out$documents, vocab = out$vocab,
+  K = 50, max.em.its = 100, data = out$meta, init.type = "Random"
+)
+```
+
+```{r}
+# Plot topic prevalence and details of the labels using the built in STM functionality
+labelTopics(inquiry_stm_fit)
+plot(inquiry_stm_fit, type = "summary", xlim = c(0, .3))
+```
+
+```{r out.width="100%"}
+# Fit a regression model using the STM and the topics, against the inquiry of the submission
+# This is to investigate whether there are topics specifically associated with different
+# inquiries.
+inquiry_effects <- estimateEffect(1:50 ~ inquiry_shortname, inquiry_stm_fit, out$meta)
+summary(inquiry_effects)
+```
+
+```{r}
+# Look at specific effects for a selected topics, then plot them specifically
+# This gets overwhelming pretty quickly so you probably don't want to try and do this 
+# against the whole dataset
+inquiry_effects <- estimateEffect(16:18 ~ inquiry_shortname, inquiry_stm_fit, out$meta)
+plot(inquiry_effects, "inquiry_shortname", model=inquiry_stm_fit, method='pointestimate', xlim=c(-0.5, 0.5))
+```
+
+# Thoughts
+
+Having done all of this, I'm not sure if the structural topic model is adding
+much over a regular topic model, but aggregated via the document metadata?
+While the statistical checks and robustness are useful, it's not showing
+anything unsuprising - documents do actually respond to the terms of
+reference of the inquiries?
+
