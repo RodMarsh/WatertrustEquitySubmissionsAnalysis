@@ -4,13 +4,13 @@ changing pagination. This script prepares turn the HTML table as saved from
 firefox devtools into the format needed for the downloader.
 
 """
-import csv
-
 from lxml import html
 
+from csv_header import make_standard_csv
+
 files = {
-    "pc_nwf_2020_initial_check.csv": "pc_nwf_2020_initial.html",
-    "pc_nwf_2020_postdraft_check.csv": "pc_nwf_2020_postdraft.html",
+    "pc_nwf_2020_initial.csv": "pc_nwf_2020_initial.html",
+    "pc_nwf_2020_postdraft.csv": "pc_nwf_2020_postdraft.html",
 }
 
 
@@ -21,10 +21,8 @@ for output_file, input_file in files.items():
     print(output_file)
 
     with open(output_file, "w") as submissions_file:
-        writer = csv.DictWriter(
+        writer = make_standard_csv(
             submissions_file,
-            ["id", "submitter", "submission_url", "format", "attachment_urls"],
-            quoting=csv.QUOTE_ALL,
         )
         writer.writeheader()
 

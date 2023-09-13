@@ -2,10 +2,12 @@
 Nicely formatted UL with LI and A's inside.
 
 """
-import csv
 import re
 
 from lxml import html
+
+from csv_header import make_standard_csv
+
 
 extract_submitter = re.compile(
     r"(No\. [0-9]+,)|(\([0-9]+(.?[0-9]+)? .B\) \((pdf|html|PDF)\))"
@@ -13,12 +15,8 @@ extract_submitter = re.compile(
 
 files = ["mdba_bpa_2017_individual.html", "mdba_bpa_2017_organisation.html"]
 
-with open("mdba_bpa_2017_check.csv", "w") as submissions_file:
-    writer = csv.DictWriter(
-        submissions_file,
-        ["id", "submitter", "submission_url", "format", "attachment_urls"],
-        quoting=csv.QUOTE_ALL,
-    )
+with open("mdba_bpa_2017.csv", "w") as submissions_file:
+    writer = make_standard_csv(submissions_file)
     writer.writeheader()
 
     identifier = 1

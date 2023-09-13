@@ -4,13 +4,13 @@ the links inside the frozen table extracted from each part of this
 submission.
 
 """
-import csv
-
 from lxml import html
 
+from csv_header import make_standard_csv
+
 files = {
-    "accc_mdb_water_markets_2019_issues_check.csv": "accc_mdb_water_markets_2019_issues.html",
-    "accc_mdb_water_markets_2019_interim_check.csv": "accc_mdb_water_markets_2019_interim.html",
+    "accc_mdb_water_markets_2019_issues.csv": "accc_mdb_water_markets_2019_issues.html",
+    "accc_mdb_water_markets_2019_interim.csv": "accc_mdb_water_markets_2019_interim.html",
 }
 
 
@@ -21,11 +21,7 @@ for output_file, input_file in files.items():
     print(output_file)
 
     with open(output_file, "w") as submissions_file:
-        writer = csv.DictWriter(
-            submissions_file,
-            ["id", "submitter", "submission_url", "format", "attachment_urls"],
-            quoting=csv.QUOTE_ALL,
-        )
+        writer = make_standard_csv(submissions_file)
         writer.writeheader()
 
         submission_listing = html.fragment_fromstring(html_string)

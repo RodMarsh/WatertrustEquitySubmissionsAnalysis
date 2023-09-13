@@ -4,9 +4,9 @@ changing pagination. This script prepares turn the HTML table as saved from
 firefox devtools into the format needed for the downloader.
 
 """
-import csv
-
 from lxml import html
+
+from csv_header import make_standard_csv
 
 with open("sa_mdb_royal_commission_2018.html", "r") as submission_table:
     html_string = submission_table.read()
@@ -16,12 +16,8 @@ table = html.fragment_fromstring(html_string)
 # Skip the header row, that isn't marked up with <th> :(
 rows = table.xpath("//tbody/tr")[1:]
 
-with open("sa_mdb_royal_commission_2018_check.csv", "w") as submissions_file:
-    writer = csv.DictWriter(
-        submissions_file,
-        ["id", "submitter", "submission_url", "format", "attachment_urls"],
-        quoting=csv.QUOTE_ALL,
-    )
+with open("sa_mdb_royal_commission_2018.csv", "w") as submissions_file:
+    writer = make_standard_csv(submissions_file)
     writer.writeheader()
 
     for i, row in enumerate(rows):
