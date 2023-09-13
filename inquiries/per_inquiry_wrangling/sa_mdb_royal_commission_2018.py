@@ -35,6 +35,10 @@ with open("sa_mdb_royal_commission_2018.csv", "w") as submissions_file:
             submission["format"] = "pdf"
             submission["submitter"] = " | ".join(url.text for url in urls)
 
+            # Special case - one of the files is listed but not public (anymore?)
+            if i == 113:
+                submission["format"] = "skip"
+
         else:
             submission["submission_url"] = ""
             submission["format"] = ""
