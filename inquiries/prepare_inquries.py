@@ -1,23 +1,44 @@
 """
+Prepare all inquiries using the inquiry header files.
 
+This script downloads all available files (if not already downloaded), then
+extracts the text from each file and saves it with appropriate metadata into
+a relational SQLite database.
+
+The moral foundations calculation is based on the following paper and
+scoring implementation:
+
+Hopp, F.R., Fisher, J.T., Cornell, D. et al. The extended Moral Foundations
+Dictionary (eMFD): Development and applications of a crowd-sourced approach
+to extracting moral intuitions from text. Behav Res 53, 232–246
+(2021). https://doi.org/10.3758/s13428-020-01433-0
+
+https://github.com/medianeuroscience/emfdscore
+
+
+Not that the EMFD library doesn't have fully specified dependencies, you will
+need to run the following first before anything will work:
+
+pip install spacy scikit-learn
+python -m spacy download en_core_web_sm
+pip install git+https://github.com/medianeuroscience/emfdscore.git
 
 """
+
 import csv
 import os
 import random
 import sqlite3
 import time
 
+from emfdscore import scoring
 import requests
+import spacy
 import textract
 
 try:
     os.mkdir("submissions")
 except FileExistsError:
-    pass
-
-
-def extract_text_from_submission_file(submission_path):
     pass
 
 
@@ -42,6 +63,16 @@ db.executescript(
         primary key (inquiry_shortname, submission_id)
     );
 
+    drop table if exists submission_emfd_score;
+    create table submission_emfd_score (
+        inquiry_shortname references inquiry,
+        submission_id,
+        score_type text,
+        score float,
+        primary key (inquiry_shortname, submission_id, score_type),
+        foreign key (inquiry_shortname, submission_id) references submission
+    )
+
     """
 )
 
@@ -59,8 +90,21 @@ def extract_text_from_file(submission_file, file_format):
     return text
 
 
-# Need to use a session to keep cookies
-headers = {"From": "s.hames@uq.edu.au"}
+# Note this is inferred from the emfd code - as written it errors with current
+# versions of spacy, so there might have been some drift or change over
+# time.
+nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
+# Can safely increase the default to accomodate the longer submissions -
+# spacy warns about significant memory usage in the ner and parser components
+# which we've already disabled.
+nlp.max_length = 2000000
+
+
+def score_emfd(text):
+    doc = nlp(text)
+    tokens = scoring.tokenizer(doc)
+    return scoring.score_emfd_all_sent(tokens)
+
 
 session = requests.Session()
 session.headers = headers
@@ -130,5 +174,16 @@ with open("inquiries.csv", "r") as inquiries_file:
                     "insert into submission values(:inquiry_shortname, :id, :submission_url, :filepath, :submitter, :text)",
                     submission,
                 )
+
+                # Apply EMFD score:
+                scores = score_emfd(text)
+
+                for score_type, score in scores.items():
+                    submission["score_type"] = score_type
+                    submission["score"] = score
+                    db.execute(
+                        "insert into submission_emfd_score values(:inquiry_shortname, :id, :score_type, :score)",
+                        submission,
+                    )
 
         db.execute("commit")

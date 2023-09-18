@@ -1,0 +1,67 @@
+---
+title: "Extended Moral Foundations Dictionary Scoring of Submissions by Inquiry"
+output: html_notebook
+---
+
+```{r eval=FALSE}
+install.packages("RSQLite")
+install.packages("writexl")
+```
+
+```{r}
+library(DBI)
+library(ggplot2)
+```
+
+# Average EMFD scores by inquiry
+
+Compute average score for each moral foundation for submissions to each inquiry.
+Note that we're filtering out any submission that doesn't use any moral words
+at all with the `moral_nonmoral_ratio` variable - this is important because some
+of the submissions have very few words, (or no words at all if they haven't been
+OCR'ed yet) - if we included these we would be underestimating the score because
+have a 0 default score. The Moral Foundation scores are based on the paper below
+using the Extended Moral Foundations Dictionary.
+
+Hopp, F.R., Fisher, J.T., Cornell, D. et al. The extended Moral Foundations
+Dictionary (eMFD): Development and applications of a crowd-sourced approach
+to extracting moral intuitions from text. Behav Res 53, 232–246
+(2021). https://doi.org/10.3758/s13428-020-01433-0
+
+```{r}
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submission_scores <- dbGetQuery(inquiries, 
+  "with submission_any_moral_word as (
+  	select 
+  		inquiry_shortname, 
+  		submission_id 
+  	from submission_emfd_score 
+  	where score_type = 'moral_nonmoral_ratio' 
+  		and score > 0
+  ) 
+  select score_type, inquiry_shortname, avg(score) as score
+  from submission_emfd_score
+  inner join submission_any_moral_word using(inquiry_shortname, submission_id)
+  where score_type != 'moral_nonmoral_ratio'
+  group by inquiry_shortname, score_type
+  ;"                          
+)
+
+dbDisconnect(inquiries)
+
+head(submission_scores)
+```
+
+# EMFD scores by inquiry
+
+```{r}
+# Plot by score for each inquiry to show per inquiry differences
+ggplot(
+  data = submission_scores, 
+  mapping = aes(y = inquiry_shortname, x = score)
+) + geom_point() + facet_wrap(vars(score_type), ncol = 2)
+
+```
+
+
+
