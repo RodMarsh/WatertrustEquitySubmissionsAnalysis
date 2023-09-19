@@ -10,7 +10,7 @@ from csv_header import make_standard_csv
 
 
 extract_submitter = re.compile(
-    r"(No\. [0-9]+,)|(\([0-9]+(.?[0-9]+)? .B\) \((pdf|html|PDF)\))"
+    r"(No\. ?[0-9]+,)|(\([0-9]+(.?[0-9]+)? .B\) \((pdf|html|PDF)\))"
 )
 
 files = ["mdba_bpa_2017_individual.html", "mdba_bpa_2017_organisation.html"]
