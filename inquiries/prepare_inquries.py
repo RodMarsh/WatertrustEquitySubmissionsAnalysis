@@ -59,6 +59,7 @@ db.executescript(
         url,
         filepath,
         submitter,
+        submitter_normalised,
         text,
         primary key (inquiry_shortname, submission_id)
     );
@@ -90,6 +91,46 @@ def extract_text_from_file(submission_file, file_format):
     return text
 
 
+def normalise_submitter(submitter):
+    """
+    Remove common honorifics from submitters for comparison across inquiries.
+
+    """
+    submitter = submitter.strip()
+
+    # Test longest honorifics first to avoid partial matches. For example
+    # 'Mr & Mrs' needs to be tested before 'Mr', otherwise we end up with
+    # '& Mrs'. Note that common honorifics are removed, but displayed against
+    # the original name to avoid any confusion.
+    honorifics = sorted(
+        (
+            "Mr & Mrs ",
+            "Mr ",
+            "Miss ",
+            "Dr ",
+            "mr ",
+            "Prof ",
+            "Prof. ",
+            "Professor",
+            "Ms ",
+            "Mrs ",
+            "Mrs & Mr ",
+            "Mr and Mrs ",
+            "Mr & Ms ",
+            "Cr ",
+            "Hon ",
+            "Associate Professor",
+        ),
+        reverse=True,
+        key=lambda x: len(x),
+    )
+    for honorific in honorifics:
+        if submitter.startswith(honorific):
+            return submitter[len(honorific) :].strip()
+
+    return submitter
+
+
 # Note this is inferred from the emfd code - as written it errors with current
 # versions of spacy, so there might have been some drift or change over
 # time.
@@ -107,7 +148,6 @@ def score_emfd(text):
 
 
 session = requests.Session()
-session.headers = headers
 
 
 with open("inquiries.csv", "r") as inquiries_file:
@@ -169,9 +209,12 @@ with open("inquiries.csv", "r") as inquiries_file:
                 submission["inquiry_shortname"] = shortname
                 submission["text"] = text
                 submission["filepath"] = download_to
+                submission["submitter_normalised"] = normalise_submitter(
+                    submission["submitter"]
+                )
 
                 db.execute(
-                    "insert into submission values(:inquiry_shortname, :id, :submission_url, :filepath, :submitter, :text)",
+                    "insert into submission values(:inquiry_shortname, :id, :submission_url, :filepath, :submitter, :submitter_normalised, :text)",
                     submission,
                 )
 
@@ -187,3 +230,35 @@ with open("inquiries.csv", "r") as inquiries_file:
                     )
 
         db.execute("commit")
+
+
+with open("submitter_labels.csv", "w") as f:
+    writer = csv.writer(f, quoting=csv.QUOTE_ALL, dialect="excel")
+    writer.writerow(
+        [
+            "inquiry_shortname",
+            "submission_id",
+            "filepath",
+            "url",
+            "submitter",
+            "submitter_normalised",
+        ]
+    )
+
+    # Make the CSV file for submitter annotation
+    rows = db.execute(
+        """
+        select
+            inquiry_shortname,
+            submission_id,
+            filepath,
+            url,
+            submitter,
+            submitter_normalised
+        from submission
+        order by submitter_normalised
+        """
+    )
+
+    for row in rows:
+        writer.writerow(row)
