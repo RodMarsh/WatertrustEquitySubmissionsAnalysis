@@ -61,6 +61,16 @@ db.executescript(
         submitter,
         submitter_normalised,
         text,
+        -- The following are the constructed categories for
+        -- the submitter, and are derived by manual labelling.
+        environmental integer,
+        regional integer,
+        consumptive integer,
+        research integer,
+        firstnations integer,
+        resourcemanagers integer,
+        government integer,
+        commercialnon integer,
         primary key (inquiry_shortname, submission_id)
     );
 
@@ -214,7 +224,25 @@ with open("inquiries.csv", "r") as inquiries_file:
                 )
 
                 db.execute(
-                    "insert into submission values(:inquiry_shortname, :id, :submission_url, :filepath, :submitter, :submitter_normalised, :text)",
+                    """
+                    insert into submission(
+                        inquiry_shortname,
+                        submission_id,
+                        url,
+                        filepath,
+                        submitter,
+                        submitter_normalised,
+                        text
+                    ) values (
+                        :inquiry_shortname,
+                        :id,
+                        :submission_url,
+                        :filepath,
+                        :submitter,
+                        :submitter_normalised,
+                        :text
+                    )
+                    """,
                     submission,
                 )
 
@@ -231,8 +259,32 @@ with open("inquiries.csv", "r") as inquiries_file:
 
         db.execute("commit")
 
+# Merge in all of the current labels
+with open("submitter_labels.csv", "r") as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        row["inquiry_shortname"] = "select_committee_fph_2021"
+        db.execute(
+            """
+            update submission set
+                environmental = :environmental,
+                regional = :regional,
+                consumptive = :consumptive,
+                research = :research,
+                firstnations = :firstnations,
+                resourcemanagers = :resourcemanagers,
+                government = :government,
+                commercialnon = :commercialnon
+            where (inquiry_shortname, submission_id) =
+                (:inquiry_shortname, :submission_id)
+            """,
+            row,
+        )
 
-with open("submitter_labels.csv", "w") as f:
+
+# Write out all of submitter labels, to handle labelling of newly added
+# submissions.
+with open("submitter_labels_new.csv", "w") as f:
     writer = csv.writer(f, quoting=csv.QUOTE_ALL, dialect="excel")
     writer.writerow(
         [
@@ -242,6 +294,14 @@ with open("submitter_labels.csv", "w") as f:
             "url",
             "submitter",
             "submitter_normalised",
+            "environmental",
+            "regional",
+            "consumptive",
+            "research",
+            "firstnations",
+            "resourcemanagers",
+            "government",
+            "commercialnon",
         ]
     )
 
@@ -254,7 +314,15 @@ with open("submitter_labels.csv", "w") as f:
             filepath,
             url,
             submitter,
-            submitter_normalised
+            submitter_normalised,
+            environmental,
+            regional,
+            consumptive,
+            research,
+            firstnations,
+            resourcemanagers,
+            government,
+            commercialnon
         from submission
         order by submitter_normalised
         """
