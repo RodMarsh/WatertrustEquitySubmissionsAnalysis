@@ -263,7 +263,6 @@ with open("inquiries.csv", "r") as inquiries_file:
 with open("submitter_labels.csv", "r") as f:
     reader = csv.DictReader(f)
     for row in reader:
-        row["inquiry_shortname"] = "select_committee_fph_2021"
         db.execute(
             """
             update submission set
@@ -276,7 +275,7 @@ with open("submitter_labels.csv", "r") as f:
                 government = :government,
                 commercialnon = :commercialnon
             where (inquiry_shortname, submission_id) =
-                (:inquiry_shortname, :submission_id)
+                (:inquiry_shortname, :submitter_id)
             """,
             row,
         )
