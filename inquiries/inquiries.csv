@@ -1,5 +1,5 @@
 "inquiry_shortname","name","url","terms_of_reference","submission_reference_file","notes"
-"select_committee_mdbp_2015","Select Committee on the Murray-Darling Basin Plan","","","select_committee_mdbp_2015.csv",""
+"select_committee_mdbp_2015","Select Committee on the Murray-Darling Basin Plan","https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Murray_Darling_Basin_Plan/murraydarling/Submissions","","select_committee_mdbp_2015.csv",""
 "select_committee_fph_2021","Select Committee on Floodplain Harvesting","","","select_committee_fph_2021.csv",""
 "pc_nwf_2020_initial","Productivity Commission National Water Reform 2020","https://www.pc.gov.au/inquiries/completed/water-reform-2020/submissions","","pc_nwf_2020_initial.csv","Initial Submissions."
 "pc_nwf_2020_postdraft","Productivity Commission National Water Reform 2020 - Submission Post Draft Report","https://www.pc.gov.au/inquiries/completed/water-reform-2020/submissions","","pc_nwf_2020_postdraft.csv","Submissions received after the interim report as indicated on the inquiry page. Excludes unattributed short comments."

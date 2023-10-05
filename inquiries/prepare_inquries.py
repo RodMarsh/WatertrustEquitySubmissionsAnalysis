@@ -63,6 +63,8 @@ db.executescript(
         text,
         -- The following are the constructed categories for
         -- the submitter, and are derived by manual labelling.
+        -- This is also available in the submission_label table for
+        -- convenience.
         environmental integer,
         regional integer,
         consumptive integer,
@@ -71,7 +73,18 @@ db.executescript(
         resourcemanagers integer,
         government integer,
         commercialnon integer,
+        notcategorisable integer,
         primary key (inquiry_shortname, submission_id)
+    );
+
+    drop table if exists submission_label;
+    create table submission_label (
+        inquiry_shortname references inquiry,
+        submission_id,
+        label text,
+        priority integer check (priority between 1 and 3),
+        primary key (inquiry_shortname, submission_id, priority),
+        foreign key (inquiry_shortname, submission_id) references submission
     );
 
     drop table if exists submission_emfd_score;
@@ -82,7 +95,10 @@ db.executescript(
         score float,
         primary key (inquiry_shortname, submission_id, score_type),
         foreign key (inquiry_shortname, submission_id) references submission
-    )
+    );
+
+    pragma journal_mode=WAL;
+    pragma foreign_keys=1;
 
     """
 )
@@ -263,6 +279,48 @@ with open("inquiries.csv", "r") as inquiries_file:
 with open("submitter_labels.csv", "r") as f:
     reader = csv.DictReader(f)
     for row in reader:
+        # Update the new table with long format labels
+        set_label = False
+        key = (row["inquiry_shortname"], row["submission_id"])
+        row["notcategorisable"] = ""
+
+        for label in [
+            "environmental",
+            "regional",
+            "consumptive",
+            "research",
+            "firstnations",
+            "resourcemanagers",
+            "government",
+            "commercialnon",
+        ]:
+            if row[label]:
+                set_label = True
+                # Coerce everything to ints
+                row[label] = int(row[label])
+                try:
+                    db.execute(
+                        """
+                        insert into submission_label values(?, ?, ?, ?)
+                        """,
+                        [*key, label, row[label]],
+                    )
+                except Exception:
+                    print(f"{row} has duplicate priorities")
+            else:
+                # Empty strings become null in the wide table.
+                row[label] = None
+
+        if not set_label:
+            row["notcategorisable"] = 1
+            db.execute(
+                """
+                insert into submission_label values(?, ?, ?, ?)
+                """,
+                [*key, "notcategorisable", 1],
+            )
+
+        # Update the original table with wide format labels
         db.execute(
             """
             update submission set
@@ -273,13 +331,16 @@ with open("submitter_labels.csv", "r") as f:
                 firstnations = :firstnations,
                 resourcemanagers = :resourcemanagers,
                 government = :government,
-                commercialnon = :commercialnon
+                commercialnon = :commercialnon,
+                notcategorisable = :notcategorisable
             where (inquiry_shortname, submission_id) =
-                (:inquiry_shortname, :submitter_id)
+                (:inquiry_shortname, :submission_id)
             """,
             row,
         )
 
+
+print("Ingesting submitter/submission labels.")
 
 # Write out all of submitter labels, to handle labelling of newly added
 # submissions.
