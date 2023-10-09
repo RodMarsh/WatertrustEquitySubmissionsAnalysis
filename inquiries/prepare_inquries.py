@@ -15,11 +15,10 @@ to extracting moral intuitions from text. Behav Res 53, 232–246
 
 https://github.com/medianeuroscience/emfdscore
 
-
 Not that the EMFD library doesn't have fully specified dependencies, you will
 need to run the following first before anything will work:
 
-pip install spacy scikit-learn
+pip install spacy scikit-learn requests pymupdf pytesseract
 python -m spacy download en_core_web_sm
 pip install git+https://github.com/medianeuroscience/emfdscore.git
 
@@ -28,13 +27,14 @@ pip install git+https://github.com/medianeuroscience/emfdscore.git
 import csv
 import os
 import random
+import re
 import sqlite3
 import time
 
 from emfdscore import scoring
 import requests
 import spacy
-import textract
+import fitz
 
 try:
     os.mkdir("submissions")
@@ -104,11 +104,27 @@ db.executescript(
 )
 
 
-def extract_text_from_file(submission_file, file_format):
-    """Extract plaintext from the given submission file."""
+def extract_text_from_file(submission_file, file_format, boilerplate_regex):
+    """
+    Extract plaintext from the given submission file.
+
+    Blocks of text that match the optional boilerplate_regex after stripping
+    whitespace will not be included.
+
+    """
 
     if file_format == "pdf":
-        text = textract.process(submission_file).decode("utf8")
+        text_chunks = []
+        with fitz.open(submission_file) as submission:
+            for page in submission:
+                for text in page.get_text("blocks", sort=True):
+                    if boilerplate_regex and boilerplate_regex.match(text[4].strip()):
+                        continue
+                    else:
+                        text_chunks.append(text[4].strip())
+
+        text = " ".join(text_chunks)
+
     elif file_format == "skip":
         text = ""
     else:
@@ -183,6 +199,12 @@ with open("inquiries.csv", "r") as inquiries_file:
         shortname = inquiry["inquiry_shortname"]
         submissions_path = inquiry["submission_reference_file"]
 
+        boilerplate_form = inquiry["boilerplate_regex"]
+        if boilerplate_form:
+            boilerplate_detector = re.compile(boilerplate_form)
+        else:
+            boilerplate_detector = None
+
         # make sure the submission specific file exists.
         try:
             os.mkdir(os.path.join("submissions", shortname))
@@ -228,7 +250,9 @@ with open("inquiries.csv", "r") as inquiries_file:
 
                 # Extract text from the submission and stuff in the database
                 if public_submission:
-                    text = extract_text_from_file(download_to, submission_format)
+                    text = extract_text_from_file(
+                        download_to, submission_format, boilerplate_detector
+                    )
                 else:
                     text = ""
 
