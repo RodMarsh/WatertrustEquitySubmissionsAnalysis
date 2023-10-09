@@ -24,6 +24,7 @@ pip install git+https://github.com/medianeuroscience/emfdscore.git
 
 """
 
+import sys
 import csv
 import os
 import random
@@ -41,6 +42,10 @@ try:
 except FileExistsError:
     pass
 
+
+specific_inquiries = set(sys.argv[1:])
+if specific_inquiries:
+    print(f"Running for specific inquiries: {specific_inquiries}")
 
 db = sqlite3.connect("inquiries.db", isolation_level=None)
 
@@ -113,13 +118,15 @@ def extract_text_from_file(submission_file, file_format, boilerplate_regex):
 
     """
 
+    skipped = []
+
     if file_format == "pdf":
         text_chunks = []
         with fitz.open(submission_file) as submission:
             for page in submission:
                 for text in page.get_text("blocks", sort=True):
                     if boilerplate_regex and boilerplate_regex.match(text[4].strip()):
-                        continue
+                        skipped.append(text[4])
                     else:
                         text_chunks.append(text[4].strip())
 
@@ -130,7 +137,7 @@ def extract_text_from_file(submission_file, file_format, boilerplate_regex):
     else:
         raise TypeError("Not a supported file_format")
 
-    return text
+    return text, skipped
 
 
 def normalise_submitter(submitter):
@@ -192,15 +199,23 @@ def score_emfd(text):
 session = requests.Session()
 
 
-with open("inquiries.csv", "r") as inquiries_file:
+with open("inquiries.csv", "r") as inquiries_file, open(
+    "boilerplate.log", "w"
+) as boilerplate_log:
     inquiries = csv.DictReader(inquiries_file, quoting=csv.QUOTE_ALL)
 
     for inquiry in inquiries:
         shortname = inquiry["inquiry_shortname"]
+
+        # Used for testing - normal runs won't touch this.
+        if specific_inquiries and shortname not in specific_inquiries:
+            continue
+
         submissions_path = inquiry["submission_reference_file"]
 
         boilerplate_form = inquiry["boilerplate_regex"]
         if boilerplate_form:
+            print(f"Detecting boilerplate with '{boilerplate_form}'")
             boilerplate_detector = re.compile(boilerplate_form)
         else:
             boilerplate_detector = None
@@ -250,9 +265,11 @@ with open("inquiries.csv", "r") as inquiries_file:
 
                 # Extract text from the submission and stuff in the database
                 if public_submission:
-                    text = extract_text_from_file(
+                    text, skipped = extract_text_from_file(
                         download_to, submission_format, boilerplate_detector
                     )
+                    boilerplate_log.writelines(skipped)
+
                 else:
                     text = ""
 
