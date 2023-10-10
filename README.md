@@ -23,7 +23,7 @@ inquiry_data\Scripts\activate.bat
 source inquiry_data/bin/activate
 
 # Install dependencies
-python -m pip install lxml textract requests
+python -m pip install lxml pytesseract pymupdf requests
 
 # Run the data preparation script
 cd inquiries
@@ -46,6 +46,16 @@ python prepare_inquiries.py
 
 - `inquiries/prepare_inquiries.py` - the main script for downloading and preparing data. This script is driven by `inquiries/inquiries.csv` and the associated `inquiries/<inquiry_shortname>.csv` files.
 - `inquiries/per_inquiry_wrangling/<inquiry_shortname>.py` - any per inquiry data manipulation necessary to generate the relevant index file.
+
+
+### OCR and format handling
+
+Almost all submissions are in PDF format already. However, not all submissions are necessarily in a nice digital format for easy text extraction. Submissions can be one of the following types, and go through a different processing pipeline depending on the annotated format in the inquiry submissions file located at `inquiries/<inquiry_shortname>.csv`.
+
+- `pdf`: The text of the PDF will be extracted as is. Note that some scanned documents have already had an OCR layer added, the `pdf` format can be used for those using the embedded OCR.
+- `pdf-ocr`: The images in the PDF will be extracted and run through tesseract via pytesseract to recognise the text content. This is appropriate for typeset document that have been scanned - tesseract is set to automatically choose the right script and orientation, and it appears that all submissions are in English, or mostly English.
+- `pdf-mixed`: The document contains a mixture of both digital and scanned typeset material: for this both the text will be extracted and OCR applied. This shouldn't be used for documents with their own OCR embedded, otherwise there will be a doubling of the text. 
+- `pdf-handwritten`: The document is completely handwritten, and OCR with tesseract will not work, or there is a mixture of typeset and handwritten material that is difficult to untangle. This format type requires manual transcription.
 
 
 ## Analysis
