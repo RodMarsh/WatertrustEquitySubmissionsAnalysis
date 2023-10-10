@@ -26,6 +26,7 @@ pip install git+https://github.com/medianeuroscience/emfdscore.git
 
 import sys
 import csv
+import io
 import os
 import random
 import re
@@ -33,9 +34,11 @@ import sqlite3
 import time
 
 from emfdscore import scoring
+import fitz
+from PIL import Image
+import pytesseract
 import requests
 import spacy
-import fitz
 
 try:
     os.mkdir("submissions")
@@ -109,7 +112,9 @@ db.executescript(
 )
 
 
-def extract_text_from_file(submission_file, file_format, boilerplate_regex):
+def extract_text_from_file(
+    submission_file, file_format, boilerplate_regex, page_start, page_end
+):
     """
     Extract plaintext from the given submission file.
 
@@ -120,22 +125,80 @@ def extract_text_from_file(submission_file, file_format, boilerplate_regex):
 
     skipped = []
 
-    if file_format == "pdf":
+    if file_format in ("pdf", "pdf-mixed"):
         text_chunks = []
         with fitz.open(submission_file) as submission:
-            for page in submission:
+            for page_sequence, page in enumerate(submission):
+                if not (page_start <= page_sequence <= page_end):
+                    # Skip page numbers out of the specified range
+                    print(
+                        f"skipping page {page_sequence}, not between {page_start}, {page_end}"
+                    )
+                    continue
                 for text in page.get_text("blocks", sort=True):
-                    if boilerplate_regex and boilerplate_regex.match(text[4].strip()):
+                    # Skip text associated with images
+                    if text[4].startswith("<image: DeviceRGB"):
+                        skipped.append(text[4])
+                    # Skip inquiry specific boilerplate
+                    elif boilerplate_regex and boilerplate_regex.match(text[4].strip()):
                         skipped.append(text[4])
                     else:
                         text_chunks.append(text[4].strip())
 
         text = " ".join(text_chunks)
 
-    elif file_format == "skip":
+    if file_format in ("pdf-ocr", "pdf-mixed"):
+        text_chunks = []
+        with fitz.open(submission_file) as submission:
+            # An image can be included multiple times in a file, such as in a
+            # header/footer - we only handle the first of these images.
+            seen_images = set()
+            for page_sequence, page in enumerate(submission):
+                if not (page_start <= page_sequence <= page_end):
+                    # Skip page numbers out of the specified range
+                    print(
+                        f"skipping page {page_sequence}, not between {page_start}, {page_end}"
+                    )
+                    continue
+
+                for image in page.get_images():
+                    # Skip duplicate images
+                    if image[0] in seen_images:
+                        continue
+
+                    if image[1]:
+                        raise ValueError("Can't handle images with masks yet.")
+
+                    seen_images.add(image[0])
+                    image_data = submission.extract_image(image[0])
+                    image_bytes = image_data["image"]
+
+                    ocr_text = pytesseract.image_to_string(
+                        Image.open(io.BytesIO(image_bytes)),
+                        lang="eng",
+                        # This mode is page auto segmentation with orientation
+                        # and script detection - the default is page auto
+                        # segmentation without the second two which can fail
+                        # for some files.
+                        config="--psm 1",
+                    )
+                    text_chunks.append(ocr_text)
+
+        text = " ".join(text_chunks)
+
+    if file_format == "pdf-handwritten":
+        # We will need to figure out a transcription process for
+        # the small number of handwritten submissions - this might
+        # be fastest to do manually.
         text = ""
-    else:
+
+    if file_format == "skip":
+        text = ""
+
+    if file_format not in ("skip", "pdf", "pdf-mixed", "pdf-handwritten", "pdf-ocr"):
         raise TypeError("Not a supported file_format")
+
+    print(text)
 
     return text, skipped
 
@@ -266,7 +329,15 @@ with open("inquiries.csv", "r") as inquiries_file, open(
                 # Extract text from the submission and stuff in the database
                 if public_submission:
                     text, skipped = extract_text_from_file(
-                        download_to, submission_format, boilerplate_detector
+                        download_to,
+                        submission_format,
+                        boilerplate_detector,
+                        int(submission["page_start"])
+                        if submission["page_start"]
+                        else 0,
+                        int(submission["page_end"])
+                        if submission["page_end"]
+                        else 2**32,
                     )
                     boilerplate_log.writelines(skipped)
 
