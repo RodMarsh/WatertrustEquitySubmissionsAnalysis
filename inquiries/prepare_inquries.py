@@ -166,9 +166,6 @@ def extract_text_from_file(
                     if image[0] in seen_images:
                         continue
 
-                    if image[1]:
-                        raise ValueError("Can't handle images with masks yet.")
-
                     seen_images.add(image[0])
                     image_data = submission.extract_image(image[0])
                     image_bytes = image_data["image"]
