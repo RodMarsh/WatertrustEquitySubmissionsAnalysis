@@ -167,11 +167,9 @@ def extract_text_from_file(
                         continue
 
                     seen_images.add(image[0])
-                    image_data = submission.extract_image(image[0])
-                    image_bytes = image_data["image"]
-
+                    pixmap = fitz.Pixmap(submission, image[0])
                     ocr_text = pytesseract.image_to_string(
-                        Image.open(io.BytesIO(image_bytes)),
+                        Image.open(io.BytesIO(pixmap.tobytes("png"))),
                         lang="eng",
                         # This mode is page auto segmentation with orientation
                         # and script detection - the default is page auto
@@ -182,6 +180,8 @@ def extract_text_from_file(
                     text_chunks.append(ocr_text)
 
         text = " ".join(text_chunks)
+        # Need to be sure the OCR is actually working.
+        print(submission_file, text)
 
     if file_format == "pdf-handwritten":
         # We will need to figure out a transcription process for
@@ -194,8 +194,6 @@ def extract_text_from_file(
 
     if file_format not in ("skip", "pdf", "pdf-mixed", "pdf-handwritten", "pdf-ocr"):
         raise TypeError("Not a supported file_format")
-
-    print(text)
 
     return text, skipped
 
@@ -259,6 +257,8 @@ def score_emfd(text):
 session = requests.Session()
 
 
+db.execute("begin")
+
 with open("inquiries.csv", "r") as inquiries_file, open(
     "boilerplate.log", "w"
 ) as boilerplate_log:
@@ -287,7 +287,6 @@ with open("inquiries.csv", "r") as inquiries_file, open(
             pass
 
         print(f"Processing {shortname=}")
-        db.execute("begin")
         db.execute("insert into inquiry values(:inquiry_shortname, :name)", inquiry)
 
         with open(submissions_path, "r") as submissions_header:
@@ -325,6 +324,7 @@ with open("inquiries.csv", "r") as inquiries_file, open(
 
                 # Extract text from the submission and stuff in the database
                 if public_submission:
+                    print(submission)
                     text, skipped = extract_text_from_file(
                         download_to,
                         submission_format,
@@ -381,8 +381,6 @@ with open("inquiries.csv", "r") as inquiries_file, open(
                         "insert into submission_emfd_score values(:inquiry_shortname, :id, :score_type, :score)",
                         submission,
                     )
-
-        db.execute("commit")
 
 # Merge in all of the current labels
 with open("submitter_labels.csv", "r") as f:
@@ -499,3 +497,6 @@ with open("submitter_labels_new.csv", "w") as f:
 
     for row in rows:
         writer.writerow(row)
+
+db.execute("commit")
+db.close()
