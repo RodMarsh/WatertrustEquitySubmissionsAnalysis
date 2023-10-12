@@ -11,6 +11,7 @@ install.packages("writexl")
 ```{r}
 library(DBI)
 library(ggplot2)
+library(tidyverse)
 ```
 
 # Average EMFD scores by inquiry
@@ -30,38 +31,44 @@ to extracting moral intuitions from text. Behav Res 53, 232–246
 
 ```{r}
 inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
-submission_scores <- dbGetQuery(inquiries, 
-  "with submission_any_moral_word as (
-  	select 
-  		inquiry_shortname, 
-  		submission_id 
-  	from submission_emfd_score 
-  	where score_type = 'moral_nonmoral_ratio' 
-  		and score > 0
-  ) 
-  select score_type, inquiry_shortname, avg(score) as score
+
+label_scores <- dbGetQuery(inquiries, 
+  "
+  select inquiry_shortname, submission_id, label, score_type, score
   from submission_emfd_score
-  inner join submission_any_moral_word using(inquiry_shortname, submission_id)
+  inner join submission_label using(inquiry_shortname, submission_id)
   where score_type != 'moral_nonmoral_ratio'
-  group by inquiry_shortname, score_type
+    and priority = 1
   ;"                          
 )
 
 dbDisconnect(inquiries)
 
-head(submission_scores)
+head(label_scores)
 ```
 
-# EMFD scores by inquiry
+# EMFD scores by submitter label
 
 ```{r}
-# Plot by score for each inquiry to show per inquiry differences
-ggplot(
-  data = submission_scores, 
-  mapping = aes(y = inquiry_shortname, x = score)
-) + geom_point() + facet_wrap(vars(score_type), ncol = 2)
+# p2 <- dbGetQuery(inquiriesDB, "SELECT * FROM submission_emfd_score WHERE inquiry_shortname = 'select_committee_fph_2021'") %>%
+# inner_join(select_committee_fph_2021_coding_long, by = c("submission_id" = "id")) %>% #join DB to coded data
+#   filter(rank == 1, !score_type == "moral_nonmoral_ratio") %>% #filter by first group coded (i.e. rank=1 and remove moral_nonoral_ratio
+#   select("submitterType", "submission_id", "score_type", "score") %>% 
+# group_by(score_type, submitterType) %>%
+# summarise(score_average = mean(score)) %>% # calculate average after grouping
+
+label_plot <- label_scores %>%
+  ggplot(aes(x = score, y = label)) + # chart
+  geom_jitter(height=0.4, size=0.1) +
+  facet_wrap(~score_type, ncol = 2) +
+ geom_vline(xintercept = 0, color = "#FFCCCC", size = 0.5) + # create easy to see zero line
+  theme_minimal() #change theme to a simpler one
+
+ggsave("emfdBySubmitterType.pdf", plot = label_plot, width = 11, height = 8.5)
 
 ```
 
+```{r}
 
+```
 
