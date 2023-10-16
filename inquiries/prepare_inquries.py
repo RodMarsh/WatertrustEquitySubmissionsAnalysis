@@ -183,6 +183,36 @@ def extract_text_from_file(
         # Need to be sure the OCR is actually working.
         print(submission_file, text)
 
+    if file_format == "pdf-vector-ocr":
+        # Some print to PDF options turn text into vectors drawn on the screen...
+        # Handle these by rendering the whole page, then passing to tesseract.
+        text_chunks = []
+        with fitz.open(submission_file) as submission:
+            for page_sequence, page in enumerate(submission):
+                if not (page_start <= page_sequence <= page_end):
+                    # Skip page numbers out of the specified range
+                    print(
+                        f"skipping page {page_sequence}, not between {page_start}, {page_end}"
+                    )
+                    continue
+
+                pixmap = page.get_pixmap(dpi=300)
+
+                ocr_text = pytesseract.image_to_string(
+                    Image.open(io.BytesIO(pixmap.tobytes("png"))),
+                    lang="eng",
+                    # This mode is page auto segmentation with orientation
+                    # and script detection - the default is page auto
+                    # segmentation without the second two which can fail
+                    # for some files.
+                    config="--psm 1",
+                )
+                text_chunks.append(ocr_text)
+
+        text = " ".join(text_chunks)
+        # Need to be sure the OCR is actually working.
+        print(submission_file, text)
+
     if file_format == "pdf-handwritten":
         # We will need to figure out a transcription process for
         # the small number of handwritten submissions - this might
@@ -192,7 +222,14 @@ def extract_text_from_file(
     if file_format == "skip":
         text = ""
 
-    if file_format not in ("skip", "pdf", "pdf-mixed", "pdf-handwritten", "pdf-ocr"):
+    if file_format not in (
+        "skip",
+        "pdf",
+        "pdf-mixed",
+        "pdf-handwritten",
+        "pdf-ocr",
+        "pdf-vector-ocr",
+    ):
         raise TypeError("Not a supported file_format")
 
     return text, skipped
