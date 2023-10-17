@@ -109,6 +109,8 @@ make_concordances <- function(corpus, probe_words){
   # Create the concordances for selected words
   concordances <- kwic(corpus_tokens, probe_words, window=25) %>% as.data.frame()
   
+  concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
+  
   # Merge the concordances with the document level count for sorting.
   # Also add the document level variables
   submissions[,c("doc_id", "url", "submitter", "inquiry_shortname", "label")] %>%
