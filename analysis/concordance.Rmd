@@ -29,7 +29,12 @@ library(writexl)
 
 ```{r}
 inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
-submissions <- dbGetQuery(inquiries, 'SELECT * FROM submission')
+submissions <- dbGetQuery(inquiries, 
+  'SELECT submission.*, submission_label.label FROM submission
+  inner join submission_label using(inquiry_shortname, submission_id)
+  where priority = 1
+  '
+)
 
 # Generate a single column unique id - this is the composite primary key
 # defined in the database, so will always be unique. This is used to tie
@@ -52,7 +57,7 @@ in each file, along with the context of which file they came from.
 sorting for documents that mention the keywords many times. 
 
 ```{r}
-probe_words = c(
+general_probes = c(
   "equity",
   "equitable",
   "inequitable",
@@ -68,27 +73,62 @@ probe_words = c(
   "unjust"  
 )
 
-# Tokenise and prepare the DFM - note we're leaving the text more or less for
-# now as we're only interested in a token count and raw concordances.
-corpus_tokens <- tokens(submission_corpus)
-corpus_dfm <- dfm(corpus_tokens)
+trust_probes = c(
+  "trust",
+  "mistrust",
+  "trustworthy",
+  "lies",
+  "lying",
+  "fraud",
+  "theft",
+  "greed",
+  "greedy",
+  "deceived",
+  "deceitful",
+  "confidence",
+  "mislead",
+  "misled",
+  "misleading",
+  "misinformation",
+  "disinformation",
+  "misinformed",
+  "disinformed",
+  "faith"
+)
 
-# Select columns of the probe words - this is for sorting the submissions table.
-probe_counts <- dfm_select(corpus_dfm, pattern = probe_words) %>% convert(to = "data.frame")
 
-# Create the concordances for selected words
-concordances <- kwic(corpus_tokens, probe_words, window=25) %>% as.data.frame()
+make_concordances <- function(corpus, probe_words){
+  # Tokenise and prepare the DFM - note we're leaving the text more or less for
+  # now as we're only interested in a token count and raw concordances.
+  corpus_tokens <- tokens(corpus)
+  corpus_dfm <- dfm(corpus_tokens)
+  
+  # Select columns of the probe words - this is for sorting the submissions table.
+  probe_counts <- dfm_select(corpus_dfm, pattern = probe_words) %>% convert(to = "data.frame")
+  
+  # Create the concordances for selected words
+  concordances <- kwic(corpus_tokens, probe_words, window=25) %>% as.data.frame()
+  
+  # Merge the concordances with the document level count for sorting.
+  # Also add the document level variables
+  submissions[,c("doc_id", "url", "submitter", "inquiry_shortname", "label")] %>%
+    merge(probe_counts, by="doc_id") %>%
+    merge(concordances, by.x = "doc_id", by.y = "docname")
+  
+}
 
-# Merge the concordances with the document level count for sorting.
-# Also add the document level variables
-concordance_with_agg <- submissions[,c("doc_id", "url", "submitter", "inquiry_shortname")] %>%
-  merge(probe_counts, by="doc_id") %>%
-  merge(concordances, by.x = "doc_id", by.y = "docname")
-   
-write_xlsx(concordance_with_agg, "../results/concordance_with_doc_agg.xlsx")
+concordance_with_agg <- make_concordances(submission_corpus, general_probes)
+write_xlsx(concordance_with_agg, "../results/general_concordance_with_doc_agg.xlsx")
+
+concordance_with_agg <- make_concordances(submission_corpus, trust_probes)
+write_xlsx(concordance_with_agg, "../results/trust_concordance_with_doc_agg.xlsx")
+
+```
 
 ```
 
 
+
+```
 
 
