@@ -116,7 +116,6 @@ make_concordances <- function(corpus, probe_words){
   submissions[,c("doc_id", "url", "submitter", "inquiry_shortname", "label")] %>%
     merge(probe_counts, by="doc_id") %>%
     merge(concordances, by.x = "doc_id", by.y = "docname")
-  
 }
 
 concordance_with_agg <- make_concordances(submission_corpus, general_probes)
