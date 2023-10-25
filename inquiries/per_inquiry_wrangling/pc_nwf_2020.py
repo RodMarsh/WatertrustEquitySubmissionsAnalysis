@@ -11,6 +11,9 @@ from csv_header import make_standard_csv
 files = {
     "pc_nwf_2020_initial.csv": "pc_nwf_2020_initial.html",
     "pc_nwf_2020_postdraft.csv": "pc_nwf_2020_postdraft.html",
+    "pc_mdbp_implementation_2023.csv": "pc_mdbp_implementation_2023.html",
+    "pc_mdbp_fiveyear_2018_initial.csv": "pc_mdbp_fiveyear_2018_initial.html",
+    "pc_mdbp_fiveyear_2018_postdraft.csv": "pc_mdbp_fiveyear_2018_postdraft.html",
 }
 
 
@@ -39,7 +42,12 @@ for output_file, input_file in files.items():
             # converted from word - the originals are provided separately,
             # along with any attachments...
             id_cell, submission_cell, _, _ = row.xpath("td")
-            submission_details = submission_cell.findall("a")[0]
+            submission_links = submission_cell.findall("a")
+            if submission_links:
+                submission_details = submission_links[0]
+            else:
+                # No link to the submission - just continue
+                continue
             link_text = "".join(submission_details.itertext())
 
             try:
