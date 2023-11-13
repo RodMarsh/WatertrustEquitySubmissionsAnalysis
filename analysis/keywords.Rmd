@@ -1,0 +1,172 @@
+# Keyword analysis
+
+This analysis aims to build keyword lists ranking words that are overused in
+particular inquiries, and by particular types of inquiry submissions. This is
+the starting point for further more detailed analysis of the individual 
+documents and to better understand which words are key for understanding the
+different landscapes of submissions (and submitters).
+
+The statistical procedures here are inspired by standard keyword detection as
+used in corpus linguistics, but with some key differences:
+
+1. The unit of analysis is the "submission", not the words used in a submission
+unlike corpus linguistics. This is important because there is significant 
+variation in basic things like the size of submissions - using individual words
+as the unit of analysis would put more weight on the longest submissions.
+
+```{r eval=FALSE}
+install.packages("quanteda")
+install.packages("quanteda.textstats")
+install.packages("RSQLite")
+install.packages("writexl")
+```
+
+# Load and prepare are submission data as extracted from the various inquiries
+```{r}
+library(DBI)
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(writexl)
+
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submissions <- dbGetQuery(inquiries, 
+  'SELECT submission.*, submission_label.label FROM submission
+  inner join submission_label using(inquiry_shortname, submission_id)
+  where priority = 1
+  '
+)
+
+# Generate a single column unique id - this is the composite primary key
+# defined in the database, so will always be unique. This is used to tie
+# together results at different granularities.
+submissions$doc_id <- paste(submissions$inquiry_shortname, submissions$submission_id)
+submission_corpus <- corpus(submissions, text_field="text", docid_field = "doc_id")
+
+dbDisconnect(inquiries)
+
+print(submission_corpus)
+```
+
+# Keyword Analysis Preparation
+
+The approach to keyword analysis here is to find keywords for each:
+
+- inquiry vs all of the rest of the inquiries
+- submitter type vs all of the rest of the submitters
+
+Also keywords will be identified using standard word counts in a corpus 
+linguistic fashion, but also by counting documents. The latter case is done by
+binarising the document-feature matrix (dfm) - this is treating each document
+as a set of features. This transformation limits the effect of extremely long
+submissions which would otherwise have undue weight in the standard corpus
+linguistic approach.
+
+To produce the final list of keywords, we will identify the top k keywords for
+each of the submitter
+
+```{r}
+submission_tokens <- tokens(submission_corpus, remove_punct=TRUE) %>% 
+  tokens_remove(stopwords("english"))
+submissions_dfm <- dfm(submission_tokens)
+# This reduces every wordcount > 1 to 1.
+submissions_boolean <- dfm_weight(submissions_dfm, scheme="boolean")
+
+score_keywords <- function(keyword_dfm, corpus_variable_name, variable) {
+  scores <- textstat_keyness(keyword_dfm, docvars(submission_corpus, corpus_variable_name) == variable, "chi") %>%
+    mutate(rank = dense_rank(desc(chi2)))
+  scores$variable_name <- corpus_variable_name
+  scores$variable <- variable
+  return(scores)
+}
+
+# Accumulate scores across all the slices and modes of iterations.
+submitter_labels <- unique(submissions$label)
+inquiries <- unique(submissions$inquiry_shortname)
+dfms <- c(submissions_boolean, submissions_dfm)
+dfm_types <- c("boolean", "word_count")
+
+results <- list()
+for (label in submitter_labels) {
+  for (i in 1:2) {
+    dfm_type = dfm_types[[i]]
+    score_dfm = dfms[[i]]
+    scores = score_keywords(score_dfm, 'label', label)
+    scores$dfm_type <- dfm_type
+    scores$keyword_from <- label
+    results <- append(results, list(scores))
+  }
+}
+
+for (inquiry in inquiries) {
+  for (i in 1:2) {
+    dfm_type = dfm_types[[i]]
+    score_dfm = dfms[[i]]
+    scores = score_keywords(score_dfm, 'inquiry_shortname', inquiry)
+    scores$dfm_type <- dfm_type
+    scores$keyword_from <- inquiry
+    results <- append(results, list(scores))
+  }
+}
+
+# Filter and merge all of the lists to identify the top k keywords for each slice
+all_scores = bind_rows(results)
+all_keywords = all_scores %>%
+  filter(rank <= 20) %>% 
+  select(feature, keyword_from)
+
+keyword_scores <- all_scores %>%
+  inner_join(all_keywords, by=c("feature"))
+
+# Pivot to wide form with one row per feature to allow cross cutting comparison
+keywords_final <- pivot_wider(
+  keyword_scores, names_from=c("variable_name", "variable", "dfm_type"), 
+  values_from=c("chi2", "rank"), id_cols=c('feature')
+)
+
+write_xlsx(keywords_final, "../results/keyword_scores.xlsx")
+
+```
+
+# Generate a sample of concordances for each keyword
+
+With roughly 1600 keywords, we don't want to read concordances for all keywords
+x all occurrences of those words - instead we'll sample a set of the matching
+contexts, and display only those concordances. This is a little tricky as we
+need to be careful about the amount of ram that KWIC uses.
+
+``` {r}
+# Produce concordances and write a summary table of the results.
+probe_words = all_keywords$feature
+# Select columns of the probe words - this is for sorting the submissions table.
+probe_counts <- dfm_select(submissions_dfm, pattern = probe_words) %>% convert(to = "data.frame")
+
+# Don't remove stopwords and punctuation for this phase as we need it to
+# generate readable concordances.
+raw_tokens = tokens(submission_corpus)
+
+# Create a sample of concordances for selected words
+single_word_concordance <- function(word) {
+  # Find matches, but don't generate full concordances yet
+  idx = index(raw_tokens, word, valuetype="fixed")
+  # Subsample matches
+  idx <- idx[sample(nrow(idx), min(nrow(idx), 10)),]
+  
+  concordances <- kwic(
+    raw_tokens, index=idx, window=25
+  ) %>% as.data.frame()
+  concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
+  return(concordances)
+}
+
+all_concordances <-  bind_rows(lapply(probe_words, single_word_concordance))
+  
+# Merge the concordances with the document level count for sorting.
+# Also add the document level variables
+concordance_with_agg <- submissions[,c("doc_id", "url", "submitter", "inquiry_shortname", "label")] %>%
+    merge(probe_counts, by="doc_id") %>%
+    merge(all_concordances, by.x = "doc_id", by.y = "docname")
+
+write_xlsx(concordance_with_agg, "../results/keyword_concordance.xlsx")
+
+```
