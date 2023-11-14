@@ -68,7 +68,10 @@ each of the submitter
 ```{r}
 submission_tokens <- tokens(submission_corpus, remove_punct=TRUE) %>% 
   tokens_remove(stopwords("english"))
-submissions_dfm <- dfm(submission_tokens)
+
+# Only consider words that appear in at least 10 submissions
+submissions_dfm <- dfm_trim(dfm(submission_tokens), min_docfreq=10)
+
 # This reduces every wordcount > 1 to 1.
 submissions_boolean <- dfm_weight(submissions_dfm, scheme="boolean")
 
@@ -111,18 +114,22 @@ for (inquiry in inquiries) {
 
 # Filter and merge all of the lists to identify the top k keywords for each slice
 all_scores = bind_rows(results)
-all_keywords = all_scores %>%
-  filter(rank <= 20) %>% 
-  select(feature, keyword_from)
+keyword_sources = all_scores %>%
+  filter(rank <= 50) %>% 
+  select(feature, keyword_from) %>%
+  distinct(feature, keyword_from)
+
+all_keywords <- keyword_sources %>% distinct(feature)
 
 keyword_scores <- all_scores %>%
-  inner_join(all_keywords, by=c("feature"))
+  inner_join(all_keywords, by=c("feature")) %>%
+  select(!keyword_from)
 
 # Pivot to wide form with one row per feature to allow cross cutting comparison
 keywords_final <- pivot_wider(
   keyword_scores, names_from=c("variable_name", "variable", "dfm_type"), 
   values_from=c("chi2", "rank"), id_cols=c('feature')
-)
+) %>% inner_join(keyword_sources, by=c("feature"))
 
 write_xlsx(keywords_final, "../results/keyword_scores.xlsx")
 

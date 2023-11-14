@@ -1,0 +1,130 @@
+# Keyword Density Plots
+
+These graphs show how keyword usage varies by submission group. Each plot is
+like a `fingerprint` of the specific language they use and how that compared
+to other groups of submitters.
+
+```{r eval=FALSE}
+install.packages("quanteda")
+install.packages("quanteda.textstats")
+install.packages("RSQLite")
+install.packages("writexl")
+```
+
+# Load and prepare are submission data as extracted from the various inquiries
+```{r}
+library(DBI)
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(writexl)
+library(readxl)
+
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submissions <- dbGetQuery(inquiries, 
+  'SELECT submission.*, submission_label.label FROM submission
+  inner join submission_label using(inquiry_shortname, submission_id)
+  where priority = 1
+  '
+)
+
+# Generate a single column unique id - this is the composite primary key
+# defined in the database, so will always be unique. This is used to tie
+# together results at different granularities.
+submissions$doc_id <- paste(submissions$inquiry_shortname, submissions$submission_id)
+submission_corpus <- corpus(submissions, text_field="text", docid_field = "doc_id")
+
+dbDisconnect(inquiries)
+
+print(submission_corpus)
+```
+
+# Keyword Density Analysis Preparation
+
+This analysis looks at the fraction of documents from each submission group that
+use particular keywords: the keywords for each group then act as a signature
+for the submissions from that group, and the similarity or not with other
+groups shows how much particular words are or aren't present.
+
+This block counts the relative number of submissions in each group that use
+each keyword.
+
+```{r}
+# The input here is a two column table: the keyword column has the keyword,
+# the label column has the submitter group for that keyword. Note that a word
+# can be used for multiple groups.
+word_groups <- read_xlsx("../results/keyword_scores.xlsx")
+
+submission_tokens <- tokens(submission_corpus, remove_punct=TRUE) %>% 
+  tokens_remove(stopwords("english"))
+
+# Apply keyword selection early as we don't need to work with any of the other cols
+submissions_dfm <- dfm_select(dfm(submission_tokens), pattern = word_groups$feature)
+# This reduces every wordcount > 1 to 1.
+submissions_boolean <- dfm_weight(submissions_dfm, scheme="boolean")
+
+# This is the submission counts of each word aggregated by group label
+# We pivot from the dfm to long format with one row per keyword/group
+group_word_counts <- dfm_group(submissions_boolean, groups = label) %>% 
+  convert('data.frame') %>%
+  rename(label=doc_id) %>%
+  pivot_longer(!label, values_to="count", names_to="feature") %>%
+  inner_join(word_groups, by="feature") %>%
+  select(label, feature, count, keyword_from)
+
+# Total document counts for each group 
+group_docs <- submissions %>% count(label)
+group_order <- group_docs %>% arrange(n)
+
+relative_frequencies <- group_word_counts %>% 
+  inner_join(group_docs, by = c("label")) %>%
+  mutate(relative_freq = count / n)
+
+```
+
+# Visualisation Option 1: heatmaps of keyword density
+
+This data is visualised as a heatmap of keywords and groups using them, with
+relative frequency in submissions as the main measure of interest.
+
+```{r}
+
+make_heatmap <- function (keyword_group) {
+  heatmap <- relative_frequencies %>%
+    filter(keyword_from == keyword_group) %>%
+    ggplot(aes(x=label, y = feature, fill=relative_freq)) +
+    geom_raster() +
+    theme_minimal() + #change theme to a simpler one
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  ggsave(paste("../results/keyword_heatmap_", keyword_group,".pdf"), plot = heatmap, width = 11, height = 8.5)
+}
+
+make_heatmap("consumptive")
+
+```
+
+# Visualisation Option 2: small multiple barcharts for each group.
+
+```{r}
+
+make_small_multiples <- function (keyword_group) {
+  subset <- relative_frequencies %>%
+    filter(keyword_from == keyword_group)
+  # Reorder feature in desc relative freq for this label group (if the keyword group is a label).
+  if (keyword_group %in% relative_frequencies$label) {
+    subset$feature <- factor(subset$feature, levels=arrange(filter(subset, label==keyword_group), relative_freq)$feature)
+  small_multi <- 
+    ggplot(subset, aes(y=relative_freq, x=feature)) +
+    geom_col() +
+    coord_flip() +
+    facet_grid(. ~ label) +
+    theme_minimal() +
+    theme(panel.spacing.x=unit(0, "cm"), panel.spacing.y=unit(0, "cm"))
+  ggsave(paste("../results/keyword_smallmultiples_", keyword_group,".pdf"), plot = small_multi, width = 297/25.4, height =  210/25.4)
+  return(small_multi)
+}
+
+lapply(unique(relative_frequencies$keyword_from), make_small_multiples)
+
+
+```
