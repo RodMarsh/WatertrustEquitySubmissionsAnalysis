@@ -124,9 +124,7 @@ make_heatmap("consumptive")
 # Visualisation Option 2: small multiple barcharts for each group.
 
 ```{r}
-
-# Adjust group order for the graph
-subset$label <- factor(subset$label, levels=c(
+label_order <- c(
   'consumptive',
   'environmental',
   'firstnations',
@@ -136,7 +134,9 @@ subset$label <- factor(subset$label, levels=c(
   'commercialnon',
   'research',
   'notcategorisable'
-))
+)
+# Adjust group order for the graph
+filtered_rel_freq$label <- factor(filtered_rel_freq$label, levels=label_order)
 
 make_small_multiples <- function (keyword_group) {
   subset <- filtered_rel_freq %>% filter(keyword_from == keyword_group)
