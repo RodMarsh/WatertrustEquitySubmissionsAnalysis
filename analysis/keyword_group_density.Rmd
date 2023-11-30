@@ -76,9 +76,22 @@ group_word_counts <- dfm_group(submissions_boolean, groups = label) %>%
 group_docs <- submissions %>% count(label)
 group_order <- group_docs %>% arrange(n)
 
+# Relative frequencies within each group of submitters
 relative_frequencies <- group_word_counts %>% 
   inner_join(group_docs, by = c("label")) %>%
-  mutate(relative_freq = count / n)
+  mutate(relative_freq = 100 * count / n)
+
+# Drop words that don't reach a relative frequency threshold in at least one 
+# group. This means that a keyword needs to occur in at least 10% of submissions
+# from at least one group to be considered important enough to pass through.
+above_rel_freq_thres <- relative_frequencies %>%
+  group_by(feature) %>% 
+  slice_max(relative_freq, with_ties=FALSE) %>%
+  filter(relative_freq >= 20) %>%
+  select(feature)
+
+filtered_rel_freq <- relative_frequencies %>% 
+  inner_join(above_rel_freq_thres, by=c('feature'))
 
 ```
 
@@ -87,10 +100,13 @@ relative_frequencies <- group_word_counts %>%
 This data is visualised as a heatmap of keywords and groups using them, with
 relative frequency in submissions as the main measure of interest.
 
+This doesn't seem to help a lot, but is included as a reference for the paths
+explored but not taken.
+
 ```{r}
 
 make_heatmap <- function (keyword_group) {
-  heatmap <- relative_frequencies %>%
+  heatmap <- filtered_rel_freq %>%
     filter(keyword_from == keyword_group) %>%
     ggplot(aes(x=label, y = feature, fill=relative_freq)) +
     geom_raster() +
@@ -101,27 +117,46 @@ make_heatmap <- function (keyword_group) {
 
 make_heatmap("consumptive")
 
+# Consumptive, environmental, First Nations, regional, government, resource managers, research, commercialnon, notcategorisable
+
 ```
 
 # Visualisation Option 2: small multiple barcharts for each group.
 
 ```{r}
 
+# Adjust group order for the graph
+subset$label <- factor(subset$label, levels=c(
+  'consumptive',
+  'environmental',
+  'firstnations',
+  'government',
+  'resourcemanagers',
+  'regional',
+  'commercialnon',
+  'research',
+  'notcategorisable'
+))
+
 make_small_multiples <- function (keyword_group) {
-  subset <- relative_frequencies %>%
-    filter(keyword_from == keyword_group)
+  subset <- filtered_rel_freq %>% filter(keyword_from == keyword_group)
   # Reorder feature in desc relative freq for this label group (if the keyword group is a label).
   if (keyword_group %in% relative_frequencies$label) {
     subset$feature <- factor(subset$feature, levels=arrange(filter(subset, label==keyword_group), relative_freq)$feature)
-  small_multi <- 
-    ggplot(subset, aes(y=relative_freq, x=feature)) +
-    geom_col() +
-    coord_flip() +
-    facet_grid(. ~ label) +
-    theme_minimal() +
-    theme(panel.spacing.x=unit(0, "cm"), panel.spacing.y=unit(0, "cm"))
-  ggsave(paste("../results/keyword_smallmultiples_", keyword_group,".pdf"), plot = small_multi, width = 297/25.4, height =  210/25.4)
+    subset$selected_group <- subset$label == keyword_group
+    small_multi <- 
+      ggplot(subset, aes(y=relative_freq, x=feature, fill=selected_group)) +
+      guides(fill="none") + 
+      geom_col() +
+      coord_flip() +
+      facet_grid(. ~ label) +
+      theme_minimal() +
+      theme(panel.spacing.x=unit(0, "cm"), panel.spacing.y=unit(0, "cm")) +
+      scale_y_continuous(name="Percentage of Group Submissions", limits=c(0, 100), breaks=c(0, 25, 50, 75)) +
+      geom_hline(yintercept = 0, color = "#666666", size = 0.5)
+    ggsave(paste("../results/keyword_smallmultiples_", keyword_group,".pdf"), plot = small_multi, width = 297/25.4, height =  210/25.4)
   return(small_multi)
+  }
 }
 
 lapply(unique(relative_frequencies$keyword_from), make_small_multiples)

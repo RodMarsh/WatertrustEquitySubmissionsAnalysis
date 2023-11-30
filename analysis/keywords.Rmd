@@ -66,8 +66,34 @@ To produce the final list of keywords, we will identify the top k keywords for
 each of the submitter
 
 ```{r}
-submission_tokens <- tokens(submission_corpus, remove_punct=TRUE) %>% 
-  tokens_remove(stopwords("english"))
+
+extended_stopwords <- c(
+  'pty', 
+  'ltd',
+  'pp',
+  'doi',
+  'e.g',
+  'et',
+  'al',
+  'eds',
+  'press',
+  'journal',
+  '10.1111',
+  'image',
+  'height',
+  'width',
+  'rgb',
+  'srgb',
+  'bpc',
+  '16',
+  'iccbased',
+  stopwords("english")
+)
+
+submission_tokens <- tokens(
+    submission_corpus, remove_punct=TRUE, split_hyphens = TRUE, remove_symbols = TRUE
+  ) %>% 
+  tokens_remove(extended_stopwords, min_nchar=2)
 
 # Only consider words that appear in at least 10 submissions
 submissions_dfm <- dfm_trim(dfm(submission_tokens), min_docfreq=10)
@@ -150,7 +176,7 @@ probe_counts <- dfm_select(submissions_dfm, pattern = probe_words) %>% convert(t
 
 # Don't remove stopwords and punctuation for this phase as we need it to
 # generate readable concordances.
-raw_tokens = tokens(submission_corpus)
+raw_tokens = tokens(submission_corpus,  split_hyphens = TRUE)
 
 # Create a sample of concordances for selected words
 single_word_concordance <- function(word) {
