@@ -35,7 +35,7 @@ submissions <- dbGetQuery(inquiries,
   inner join submission_label using(inquiry_shortname, submission_id)
   where priority = 1
   '
-)
+) %>% mutate(text = gsub("[‘’]", "'", text))
 
 # Generate a single column unique id - this is the composite primary key
 # defined in the database, so will always be unique. This is used to tie
@@ -80,13 +80,27 @@ extended_stopwords <- c(
   'journal',
   '10.1111',
   'image',
-  'height',
+  # 'height',
   'width',
   'rgb',
   'srgb',
   'bpc',
   '16',
   'iccbased',
+  'water',
+  'eds',
+  'mr',
+  '2017',
+  '2013',
+  '41',
+  '95',
+  '87',
+  '8003',
+  '2006',
+  '2018',
+  '2601',
+  '02',
+  '43',
   stopwords("english")
 )
 

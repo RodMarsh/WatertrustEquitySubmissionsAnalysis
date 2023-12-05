@@ -26,7 +26,7 @@ submissions <- dbGetQuery(inquiries,
   inner join submission_label using(inquiry_shortname, submission_id)
   where priority = 1
   '
-)
+) %>% mutate(text = gsub("[‘’]", "'", text))
 
 # Generate a single column unique id - this is the composite primary key
 # defined in the database, so will always be unique. This is used to tie
@@ -153,7 +153,7 @@ make_small_multiples <- function (keyword_group) {
       theme_minimal() +
       theme(panel.spacing.x=unit(0, "cm"), panel.spacing.y=unit(0, "cm")) +
       scale_y_continuous(name="Percentage of Group Submissions", limits=c(0, 100), breaks=c(0, 25, 50, 75)) +
-      geom_hline(yintercept = 0, color = "#666666", size = 0.5)
+      geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5)
     ggsave(paste("../results/keyword_smallmultiples_", keyword_group,".pdf"), plot = small_multi, width = 297/25.4, height =  210/25.4)
   return(small_multi)
   }
