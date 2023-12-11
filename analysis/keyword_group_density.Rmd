@@ -163,3 +163,70 @@ lapply(unique(relative_frequencies$keyword_from), make_small_multiples)
 
 
 ```
+
+# Selected keyword summary
+
+```{r}
+include_labels <- c(
+  'consumptive',
+  'environmental',
+  'firstnations',
+  'government',
+  'resourcemanagers',
+  'research'
+)
+
+include_keywords <- data.frame(feature=c(
+  'farm',
+  'family',
+  'wetlands',
+  'ecosystems',
+  'fish',
+  'pricing',
+  'planning',
+  'regulation',
+  'land',
+  'country', 
+  'rights',
+  'us'
+), keyword_from = c (
+  'consumptive',
+  'consumptive',
+  'environmental',
+  'environmental',
+  'environmental',
+  'resourcemanagers',
+  'resourcemanagers',
+  'resourcemanagers',
+  'firstnations',
+  'firstnations',
+  'firstnations',
+  'firstnations'
+)
+)
+
+selected_subset <- filtered_rel_freq %>% 
+  filter(feature %in% include_keywords$feature, label %in% include_labels) %>%
+  select(feature, label, relative_freq) %>%
+  distinct() %>%
+  inner_join(include_keywords, by='feature')
+
+selected_subset$feature <- factor(selected_subset$feature, levels=include_keywords$feature)
+selected_subset$label <- factor(selected_subset$label, levels=include_labels)
+selected_subset$from_keyword <- selected_subset$label == selected_subset$keyword_from
+
+small_multi <- ggplot(selected_subset, aes(y=relative_freq, x=feature, fill=from_keyword)) +
+  guides(fill="none") + 
+  geom_col() +
+  coord_flip() +
+  facet_grid(. ~ label) +
+  theme_minimal() +
+  theme(panel.spacing.x=unit(0, "cm"), panel.spacing.y=unit(0, "cm")) +
+  scale_y_continuous(name="Percentage of Submissions", limits=c(0, 100), breaks=c(0, 25, 50, 75)) +
+  geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5)
+
+
+ggsave(paste("../results/keyword_smallmultiples_summary.pdf"), plot = small_multi, width = 210/25.4, height =  0.5*297/25.4)
+small_multi
+
+```
