@@ -167,66 +167,130 @@ lapply(unique(relative_frequencies$keyword_from), make_small_multiples)
 # Selected keyword summary
 
 ```{r}
-include_labels <- c(
+# Note we're setting these up as factors so as to be in the correct order for 
+# display
+labels <- c(
   'consumptive',
   'environmental',
   'firstnations',
   'government',
   'resourcemanagers',
-  'research'
+  'research',
+  'regional'
 )
 
-include_keywords <- data.frame(feature=c(
+keywords <- c(
   'farm',
   'family',
+  'food',
+  'irrigation',
+  # plan
   'wetlands',
   'ecosystems',
   'fish',
+  'flows',
+  'protect',
+  'cultural',
+  'vulnerable',
   'pricing',
   'planning',
   'regulation',
+  'customers',
+  'efficiently',
+  'framework',
   'land',
   'country', 
   'rights',
-  'us'
-), keyword_from = c (
+  'us',
+  # Add cultural
+  'care',
+  'plan',
+  'outcomes',
+  'measures',
+  # 'framework',
+  'efficiency',
+  'research',
+  # Repeat flow
+  # plan
+  'ecological',
+  'university',
+  'professor',
+  'crisis',
+  # plan
+  'river',
+  'communities',
+  'government',
+  'local',
+  'region'
+)
+
+keyword_labels <- c (
+  'consumptive',
+  'consumptive',
   'consumptive',
   'consumptive',
   'environmental',
   'environmental',
   'environmental',
+  'environmental',
+  'environmental',
+  'environmental',
+  'environmental',
+  'resourcemanagers',
+  'resourcemanagers',
+  'resourcemanagers',
   'resourcemanagers',
   'resourcemanagers',
   'resourcemanagers',
   'firstnations',
   'firstnations',
   'firstnations',
-  'firstnations'
+  'firstnations',
+  'firstnations',
+  'government',
+  'government',
+  'government',
+  'government',
+  #'government',
+  'research',
+  'research',
+  'research',
+  'research',
+  'research',
+  'regional',
+  'regional',
+  'regional',
+  'regional',
+  'regional'
 )
-)
+
+include_keywords <- data.frame(feature=keywords, keyword_from=keyword_labels)
 
 selected_subset <- filtered_rel_freq %>% 
   filter(feature %in% include_keywords$feature, label %in% include_labels) %>%
   select(feature, label, relative_freq) %>%
   distinct() %>%
-  inner_join(include_keywords, by='feature')
+  inner_join(include_keywords, by='feature') %>%
+  mutate(keyword_fill = "bg", highlight=ifelse(keyword_from==label, 'highlight', 'bgalpha'))
 
-selected_subset$feature <- factor(selected_subset$feature, levels=include_keywords$feature)
-selected_subset$label <- factor(selected_subset$label, levels=include_labels)
-selected_subset$from_keyword <- selected_subset$label == selected_subset$keyword_from
+selected_subset$feature <- factor(selected_subset$feature, keywords)
 
-small_multi <- ggplot(selected_subset, aes(y=relative_freq, x=feature, fill=from_keyword)) +
-  guides(fill="none") + 
+highlight_colors <- c("bg"="#F8766D", "highlight"='#000000', 'bgalpha'='#11111100')
+
+small_multi <- ggplot(selected_subset, aes(y=relative_freq, x=feature, fill=keyword_fill, color=highlight)) +
+  guides(fill="none", color="none") + 
   geom_col() +
   coord_flip() +
   facet_grid(. ~ label) +
   theme_minimal() +
   theme(panel.spacing.x=unit(0, "cm"), panel.spacing.y=unit(0, "cm")) +
   scale_y_continuous(name="Percentage of Submissions", limits=c(0, 100), breaks=c(0, 25, 50, 75)) +
-  geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5)
+  geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5) +
+  scale_fill_manual(values=highlight_colors) +
+  scale_colour_manual(values=highlight_colors)
 
+small_multi
 
 ggsave(paste("../results/keyword_smallmultiples_summary.pdf"), plot = small_multi, width = 210/25.4, height =  0.5*297/25.4)
-small_multi
 
 ```
