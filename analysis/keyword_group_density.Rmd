@@ -179,12 +179,14 @@ labels <- c(
   'regional'
 )
 
+
+# Note - keywords are repeated in this group to match multiple submitter groups
 keywords <- c(
   'farm',
   'family',
   'food',
   'irrigation',
-  # plan
+  'plan',
   'wetlands',
   'ecosystems',
   'fish',
@@ -192,31 +194,31 @@ keywords <- c(
   'protect',
   'cultural',
   'vulnerable',
+  'land',
+  'country', 
+  'rights',
+  'us',
+  'cultural',
+  'care',
+  'plan',
+  'outcomes',
+  'measures',
+  'framework',
+  'efficiency',
   'pricing',
   'planning',
   'regulation',
   'customers',
   'efficiently',
   'framework',
-  'land',
-  'country', 
-  'rights',
-  'us',
-  # Add cultural
-  'care',
-  'plan',
-  'outcomes',
-  'measures',
-  # 'framework',
-  'efficiency',
   'research',
-  # Repeat flow
-  # plan
+  'flow',
+  'plan',
   'ecological',
   'university',
   'professor',
   'crisis',
-  # plan
+  'plan',
   'river',
   'communities',
   'government',
@@ -229,6 +231,7 @@ keyword_labels <- c (
   'consumptive',
   'consumptive',
   'consumptive',
+  'consumptive',
   'environmental',
   'environmental',
   'environmental',
@@ -236,12 +239,7 @@ keyword_labels <- c (
   'environmental',
   'environmental',
   'environmental',
-  'resourcemanagers',
-  'resourcemanagers',
-  'resourcemanagers',
-  'resourcemanagers',
-  'resourcemanagers',
-  'resourcemanagers',
+  'firstnations',
   'firstnations',
   'firstnations',
   'firstnations',
@@ -251,12 +249,21 @@ keyword_labels <- c (
   'government',
   'government',
   'government',
-  #'government',
+  'government',
+  'resourcemanagers',
+  'resourcemanagers',
+  'resourcemanagers',
+  'resourcemanagers',
+  'resourcemanagers',
+  'resourcemanagers',
   'research',
   'research',
   'research',
   'research',
   'research',
+  'research',
+  'research',
+  'regional',
   'regional',
   'regional',
   'regional',
@@ -264,16 +271,27 @@ keyword_labels <- c (
   'regional'
 )
 
-include_keywords <- data.frame(feature=keywords, keyword_from=keyword_labels)
+include_keywords <- data.frame(feature=keywords, selected_for=factor(keyword_labels, labels))
 
 selected_subset <- filtered_rel_freq %>% 
-  filter(feature %in% include_keywords$feature, label %in% include_labels) %>%
+  filter(feature %in% include_keywords$feature, label %in% labels) %>%
   select(feature, label, relative_freq) %>%
   distinct() %>%
-  inner_join(include_keywords, by='feature') %>%
-  mutate(keyword_fill = "bg", highlight=ifelse(keyword_from==label, 'highlight', 'bgalpha'))
+  inner_join(include_keywords, by='feature', relationship='many-to-many') %>%
+  mutate(keyword_fill = "bg", highlight=ifelse(selected_for==label, 'highlight', 'bgalpha'))
 
-selected_subset$feature <- factor(selected_subset$feature, keywords)
+
+# Order each keyword by it's max relative frequency within one group.
+keyword_order <- selected_subset %>% 
+  filter(selected_for == label) %>%
+  group_by(feature) %>%
+  slice_max(tibble(relative_freq, label), with_ties=FALSE) %>%
+  arrange(as.integer(selected_for), desc(relative_freq))
+
+# Note we reverse the keyword order in the factor, because we've already coord_flipped the axes,
+# otherwise we'd have the first keyword down the bottom.
+selected_subset$feature <- factor(selected_subset$feature, rev(keyword_order$feature))
+selected_subset$label <- factor(selected_subset$label, labels)
 
 highlight_colors <- c("bg"="#F8766D", "highlight"='#000000', 'bgalpha'='#11111100')
 
