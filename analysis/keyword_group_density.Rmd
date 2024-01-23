@@ -55,8 +55,48 @@ each keyword.
 # can be used for multiple groups.
 word_groups <- read_xlsx("../results/keyword_scores.xlsx")
 
-submission_tokens <- tokens(submission_corpus, remove_punct=TRUE) %>% 
-  tokens_remove(stopwords("english"))
+# Use the same stopword list as for the keyword detection.
+extended_stopwords <- c(
+  'pty', 
+  'ltd',
+  'pp',
+  'doi',
+  'e.g',
+  'et',
+  'al',
+  'eds',
+  'press',
+  'journal',
+  '10.1111',
+  'image',
+  # 'height',
+  'width',
+  'rgb',
+  'srgb',
+  'bpc',
+  '16',
+  'iccbased',
+  # 'water',
+  'eds',
+  'mr',
+  '2017',
+  '2013',
+  '41',
+  '95',
+  '87',
+  '8003',
+  '2006',
+  '2018',
+  '2601',
+  '02',
+  '43',
+  stopwords("english")
+)
+
+submission_tokens <- tokens(
+    submission_corpus, remove_punct=TRUE, split_hyphens = TRUE, remove_symbols = TRUE
+  ) %>% 
+  tokens_remove(extended_stopwords, min_nchar=2)
 
 # Apply keyword selection early as we don't need to work with any of the other cols
 submissions_dfm <- dfm_select(dfm(submission_tokens), pattern = word_groups$feature)
@@ -312,3 +352,63 @@ small_multi
 ggsave(paste("../results/keyword_smallmultiples_summary.pdf"), plot = small_multi, width = 210/25.4, height =  0.5*297/25.4)
 
 ```
+
+
+# Drilldown visualisation: word cooccurrence networks
+
+The aim of this visualisation is to extend the keyword tabulations above and allow
+drilling down into the context of the chosen keywords: we aim to see the words
+that co-occur with the keywords broken down by groups.
+
+```{r}
+
+illustrative_words <- c(
+  "water",
+  "rivers",
+  "flows",
+  "communities"
+)
+
+chosen_groups <- c(
+    "environmental",
+    "consumptive",
+    "firstnations",
+    "government"   
+)
+
+# For each of the keywords remaining after filtering, find the cooccurring words
+# in each group of submissions. Each of these patterns is then a descriptive
+# vector of interesting things to consider for what that word means to that
+# group.
+
+keyword_group_ranks <- list()
+for (word in illustrative_words) {
+  # Make the binary weighted token windows for the selected words
+  token_windows <- tokens_select(
+    submission_tokens, 
+    pattern=word, 
+    valuetype='fixed', 
+    # Note that window = 10 is after removing stopwords and punctuation, so
+    # is effectively longer than you might first think.
+    window=10
+  )
+  doc_dfm <- dfm_weight(dfm(token_windows), scheme='boolean')
+  for (group in chosen_groups) {
+    # Score that DFM for each group for the chosen word.
+    group_score <- textstat_keyness(
+      doc_dfm, target=docvars(submission_corpus, 'label') == group
+    ) %>% slice(1:20)
+    
+    group_score$chosen_word <- word
+    group_score$group <- group
+    keyword_group_ranks <- append(keyword_group_ranks, list(group_score))
+  }
+}
+
+output_ranked_collocates <- bind_rows(keyword_group_ranks)
+
+write_xlsx(output_ranked_collocates, "../results/selected_group_collocation_scores.xlsx")
+
+
+```
+
