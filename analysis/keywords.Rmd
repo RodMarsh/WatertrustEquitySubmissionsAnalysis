@@ -19,6 +19,7 @@ install.packages("quanteda")
 install.packages("quanteda.textstats")
 install.packages("RSQLite")
 install.packages("writexl")
+install.packages("tidyverse")
 ```
 
 # Load and prepare are submission data as extracted from the various inquiries
