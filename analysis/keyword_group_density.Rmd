@@ -135,33 +135,7 @@ filtered_rel_freq <- relative_frequencies %>%
 
 ```
 
-# Visualisation Option 1: heatmaps of keyword density
-
-This data is visualised as a heatmap of keywords and groups using them, with
-relative frequency in submissions as the main measure of interest.
-
-This doesn't seem to help a lot, but is included as a reference for the paths
-explored but not taken.
-
-```{r}
-
-make_heatmap <- function (keyword_group) {
-  heatmap <- filtered_rel_freq %>%
-    filter(keyword_from == keyword_group) %>%
-    ggplot(aes(x=label, y = feature, fill=relative_freq)) +
-    geom_raster() +
-    theme_minimal() + #change theme to a simpler one
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
-  ggsave(paste("../results/keyword_heatmap_", keyword_group,".pdf"), plot = heatmap, width = 11, height = 8.5)
-}
-
-make_heatmap("consumptive")
-
-# Consumptive, environmental, First Nations, regional, government, resource managers, research, commercialnon, notcategorisable
-
-```
-
-# Visualisation Option 2: small multiple barcharts for each group.
+# Visualisation: small multiple barcharts for each group.
 
 ```{r}
 label_order <- c(
@@ -216,7 +190,11 @@ labels <- c(
   'government',
   'resourcemanagers',
   'research',
-  'regional'
+  'regional',
+  # Note that we're actually not choosing these for anything, we just need
+  # the factors to have the same sets
+  'commercialnon',
+  'notcategorisable'
 )
 
 
@@ -313,8 +291,8 @@ keyword_labels <- c (
 
 include_keywords <- data.frame(feature=keywords, selected_for=factor(keyword_labels, labels))
 
-selected_subset <- filtered_rel_freq %>% 
-  filter(feature %in% include_keywords$feature, label %in% labels) %>%
+selected_subset <- filtered_rel_freq %>%
+  filter(feature %in% include_keywords$feature, label %in% keyword_labels) %>%
   select(feature, label, relative_freq) %>%
   distinct() %>%
   inner_join(include_keywords, by='feature', relationship='many-to-many') %>%
@@ -362,33 +340,34 @@ that co-occur with the keywords broken down by groups.
 
 ```{r}
 
-illustrative_words <- c(
-  "water",
-  "rivers",
-  "flows",
-  "communities"
+illustrative_words <- tibble(
+  feature = c(
+    "water",
+    "rivers",
+    "flows",
+    "communities"
+  ),
+  keyword_from = "selected"
 )
 
-chosen_groups <- c(
-    "environmental",
-    "consumptive",
-    "firstnations",
-    "government"   
-)
+group_keywords <- filtered_rel_freq %>% 
+  filter(label == keyword_from) %>%
+  select(keyword_from, feature) %>%
+  union(illustrative_words)
 
-# For each of the keywords remaining after filtering, find the cooccurring words
+
+# For each of the keywords remaining after filtering, find the co-occurring words
 # in each group of submissions. Each of these patterns is then a descriptive
 # vector of interesting things to consider for what that word means to that
 # group.
-
 keyword_group_ranks <- list()
-for (word in illustrative_words) {
+for (word in unique(group_keywords$feature)) {
   # Make the binary weighted token windows for the selected words
   token_windows <- tokens_select(
     submission_tokens, 
     pattern=word, 
     valuetype='fixed', 
-    # Note that window = 10 is after removing stopwords and punctuation, so
+    # Note that window = 10 is after removing stop words and punctuation, so
     # is effectively longer than you might first think.
     window=10
   )
@@ -399,15 +378,24 @@ for (word in illustrative_words) {
       doc_dfm, target=docvars(submission_corpus, 'label') == group
     ) %>% slice(1:20)
     
-    group_score$chosen_word <- word
+    group_score$keyword <- word
     group_score$group <- group
     keyword_group_ranks <- append(keyword_group_ranks, list(group_score))
   }
 }
 
-output_ranked_collocates <- bind_rows(keyword_group_ranks)
+ranked_collocates <- bind_rows(keyword_group_ranks)
 
-write_xlsx(output_ranked_collocates, "../results/selected_group_collocation_scores.xlsx")
+grouped_ranked_collocates <- ranked_collocates %>% 
+  inner_join(group_keywords, by=join_by(keyword==feature))
+
+# Form the final results and glue back the original source of the keyword...
+# Note that some words are keywords from multiple groups and are therefore
+# *repeated* in the data.
+
+
+
+write_xlsx(grouped_ranked_collocates, "../results/keyword_group_collocation_ranks.xlsx")
 
 
 ```
