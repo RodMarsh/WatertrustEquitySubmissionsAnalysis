@@ -384,16 +384,12 @@ for (word in unique(group_keywords$feature)) {
   }
 }
 
-ranked_collocates <- bind_rows(keyword_group_ranks)
-
-grouped_ranked_collocates <- ranked_collocates %>% 
-  inner_join(group_keywords, by=join_by(keyword==feature))
-
 # Form the final results and glue back the original source of the keyword...
 # Note that some words are keywords from multiple groups and are therefore
 # *repeated* in the data.
-
-
+ranked_collocates <- bind_rows(keyword_group_ranks)
+grouped_ranked_collocates <- ranked_collocates %>% 
+  inner_join(group_keywords, by=join_by(keyword==feature))
 
 write_xlsx(grouped_ranked_collocates, "../results/keyword_group_collocation_ranks.xlsx")
 
