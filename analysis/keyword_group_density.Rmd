@@ -376,7 +376,9 @@ for (word in unique(group_keywords$feature)) {
     # Score that DFM for each group for the chosen word.
     group_score <- textstat_keyness(
       doc_dfm, target=docvars(submission_corpus, 'label') == group
-    ) %>% slice(1:20)
+    ) %>% 
+    slice(1:20) %>%
+    mutate(rank=row_number())
     
     group_score$keyword <- word
     group_score$group <- group
@@ -385,14 +387,25 @@ for (word in unique(group_keywords$feature)) {
 }
 
 # Form the final results and glue back the original source of the keyword...
+# Also add the group relative frequency and global relative frequency.
 # Note that some words are keywords from multiple groups and are therefore
 # *repeated* in the data.
 ranked_collocates <- bind_rows(keyword_group_ranks)
+total_submissions <- nrow(submissions)
+
 grouped_ranked_collocates <- ranked_collocates %>% 
-  inner_join(group_keywords, by=join_by(keyword==feature))
+  inner_join(group_keywords, by=join_by(keyword==feature)) %>%
+  inner_join(group_docs, by=join_by(group==label)) %>%
+  mutate(
+    n_total = n_target + n_reference, 
+    group_rel_freq=100 * n_target / n, 
+    overall_rel_freq=100*(n_target + n_reference) / total_submissions
+  ) %>%
+  select(group, keyword_from, keyword, feature, rank, n_target, n_total, group_rel_freq, overall_rel_freq)
 
 write_xlsx(grouped_ranked_collocates, "../results/keyword_group_collocation_ranks.xlsx")
 
 
 ```
+
 
