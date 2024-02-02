@@ -405,7 +405,14 @@ grouped_ranked_collocates <- ranked_collocates %>%
 
 write_xlsx(grouped_ranked_collocates, "../results/keyword_group_collocation_ranks.xlsx")
 
+# Simplified wide format for easier browsing
+wide_grouped_ranked_collocates <- grouped_ranked_collocates %>%
+  group_by(group, keyword_from, keyword) %>%
+  arrange(rank, .by_group = TRUE) %>%
+  summarise(collocated_features = paste0(feature, collapse=", "))
 
+write_xlsx(wide_grouped_ranked_collocates, "../results/keyword_group_collocation_wide.xlsx")
 ```
+
 
 
