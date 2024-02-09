@@ -259,6 +259,7 @@ if not apply_labels_only:
             government integer,
             commercialnon integer,
             notcategorisable integer,
+            electedrep integer,
             primary key (inquiry_shortname, submission_id)
         );
 
@@ -423,6 +424,7 @@ with open("submitter_labels.csv", "r") as f:
             "resourcemanagers",
             "government",
             "commercialnon",
+            "electedrep",
         ]:
             if row[label]:
                 set_label = True
@@ -462,6 +464,7 @@ with open("submitter_labels.csv", "r") as f:
                 resourcemanagers = :resourcemanagers,
                 government = :government,
                 commercialnon = :commercialnon,
+                electedrep = :electedrep,
                 notcategorisable = :notcategorisable
             where (inquiry_shortname, submission_id) =
                 (:inquiry_shortname, :submission_id)

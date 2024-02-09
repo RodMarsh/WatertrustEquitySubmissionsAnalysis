@@ -1,4 +1,5 @@
 "inquiry_shortname","name","url","terms_of_reference","submission_reference_file","notes","boilerplate_regex"
+"hansard_various","Speeches from Federal Parliament over various legislation and debates","","","hansard_speeches.csv","",""
 "select_committee_mdbp_2015","Select Committee on the Murray-Darling Basin Plan","https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Murray_Darling_Basin_Plan/murraydarling/Submissions","","select_committee_mdbp_2015.csv","","Murray-Darling Basin Plan|Submission [0-9]+"
 "select_committee_fph_2021","Select Committee on Floodplain Harvesting","","","select_committee_fph_2021.csv","",""
 "pc_nwf_2020_initial","Productivity Commission National Water Reform 2020","https://www.pc.gov.au/inquiries/completed/water-reform-2020/submissions","","pc_nwf_2020_initial.csv","Initial Submissions.",""
@@ -8,5 +9,4 @@
 "mdba_bpa_2017","Murray Darling Basin Authority Basin Plan Amendments 2017","https://getinvolved.mdba.gov.au/bp-amendments-submissions/widgets/139364/documents","","mdba_bpa_2017.csv","","Title |First name$|Last name$|Your town or suburb$|Other related feedback$|Other practical proposed Basin Plan amendments$"
 "sa_mdb_royal_commission_2018","Murray-Darling Basin Royal Commission","https://www.environment.sa.gov.au/topics/river-murray/basin-plan/murray-darling-basin-commission/submissions","","sa_mdb_royal_commission_2018.csv","There seem to be some discrepancies between the submission files indicated authorship and the RC's table of authors - the display text in the table is used as the source here.",""
 "select_committee_restoring_rivers_2023","Inquiry into the Water Amendment (Restoring our Rivers) Bill 2023","https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Environment_and_Communications/MDBAWaterBill2023/Submissions","","select_committee_restoring_rivers_2023.csv","","Water Amendment (Restoring Our Rivers) Bill 2023 [Provisions]|Submission [0-9]+"
-"hansard_various","Speeches from Federal Parliament over various legislation and debates","","","hansard_speeches.csv","",""
 

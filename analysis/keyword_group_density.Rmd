@@ -147,6 +147,7 @@ label_order <- c(
   'regional',
   'commercialnon',
   'research',
+  'electedrep',
   'notcategorisable'
 )
 # Adjust group order for the graph
