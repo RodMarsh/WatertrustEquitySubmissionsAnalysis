@@ -158,6 +158,10 @@ def extract_text_from_file(
     if file_format == "skip":
         text = ""
 
+    if file_format == "txt":
+        with open(submission_file, "r") as submission:
+            text = submission.read()
+
     if file_format not in (
         "skip",
         "pdf",
@@ -165,6 +169,7 @@ def extract_text_from_file(
         "pdf-handwritten",
         "pdf-ocr",
         "pdf-vector-ocr",
+        "txt",
     ):
         raise TypeError("Not a supported file_format")
 
@@ -212,6 +217,7 @@ def normalise_submitter(submitter):
 
 
 all_args = set(sys.argv[1:])
+apply_labels_only = False
 
 if "apply_labels_only" in all_args:
     apply_labels_only = True
