@@ -65,14 +65,27 @@ with open("../../hansard_speeches.csv", "w", newline="") as f:
         where
                 pp.date >= '2003-01-01'
             and (
-                -- Select debates by that match four specific
-                -- content areas, spanning 2007-current
-                -- and the MDBA and Basin plan in between
-                lower(title) like '%water%bill 2007%' or
-                lower(title) like '%basin authority%' or
-                lower(title) like '%basin plan%' or
-                lower(title) like '%restoring our rivers%'
+            -- Select debates by that match four specific
+            -- second reading speeches on particular bills
+            replace(title, '\n', ' ') in (
+                'BILLS Water Amendment (Restoring Our Rivers) Bill 2023 Second Reading',
+                'WATER BILL 2007 WATER (CONSEQUENTIAL AMENDMENTS) BILL 2007 Second Reading',
+                'BILLS Water Amendment Bill 2015 Second Reading',
+                'BILLS Water Amendment (Water for the Environment Special Account) Bill 2012 Second Reading',
+                'WATER AMENDMENT BILL 2008 Second Reading',
+                'BILLS Water Amendment Bill 2018 Second Reading',
+                'BILLS Water Amendment (Long-term Average Sustainable Diversion Limit Adjustment) Bill 2012 Second Reading',
+                'BILLS Water Amendment (Review Implementation and Other Measures) Bill 2015 Second Reading',
+                'BILLS National Water Commission (Abolition) Bill 2015 Second Reading',
+                'BILLS Water Legislation Amendment (Inspector-General of Water Compliance and Other Measures) Bill 2021 Second Reading',
+                'BILLS Register of Foreign Ownership of Agricultural Land Amendment (Water) Bill 2016 Second Reading',
+                'BILLS Water Amendment (Indigenous Authority Member) Bill 2019 Second Reading',
+                'BILLS Environment Protection and Biodiversity Conservation Amendment (Expanding the Water Trigger) Bill 2023 Second Reading',
+                'Federation Chamber BILLS National Water Commission Amendment Bill 2012 Second Reading',
+                'BILLS Water Legislation Amendment (Sustainable Diversion Limit Adjustment) Bill 2016 Second Reading'
+                )
             )
+            -- Only choose pages with nominated speakers/excluding some of the procedural elements such as divisions.
             and page_id in (
                 select page_id
                 from metadata

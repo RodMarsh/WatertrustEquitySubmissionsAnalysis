@@ -495,6 +495,7 @@ with open("submitter_labels_new.csv", "w") as f:
             "resourcemanagers",
             "government",
             "commercialnon",
+            "electedrep",
         ]
     )
 
@@ -515,7 +516,8 @@ with open("submitter_labels_new.csv", "w") as f:
             firstnations,
             resourcemanagers,
             government,
-            commercialnon
+            commercialnon,
+            electedrep
         from submission
         order by submitter_normalised
         """
