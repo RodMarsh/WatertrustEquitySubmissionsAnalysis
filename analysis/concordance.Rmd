@@ -70,7 +70,7 @@ general_probes = c(
   "just",
   "justice",
   "injustice",
-  "unjust"  
+  "unjust"
 )
 
 trust_probes = c(
@@ -126,9 +126,39 @@ write_xlsx(concordance_with_agg, "../results/trust_concordance_with_doc_agg.xlsx
 
 ```
 
-```
+# Proximity queries for selected words
+
+There's no simple near query style operator for kwic functionality, but we
+can emulate it with careful use of the select_tokens function. One limitation of
+this is that it can narrow our search window a bit further than we might otherwise
+want to.
+
+This block will first select windows that are within window_size of the chosen
+search words, then further select the regions that are within window_size of the
+otherwords. This is a bit of a hack and doesn't really model the boundaries
+correctly but should be suitable for taking a look at nearby words.
+
+```{r}
+
+keywords <- c('buybacks', 'buyback')
+near_words <- c('impact')
+window_size <- 25
+
+corpus_tokens <- tokens(submission_corpus)
+
+# Make the binary weighted token windows for the selected words
+near_windows <- tokens_select(
+  corpus_tokens, 
+  pattern=keywords, 
+  window=window_size
+) %>% kwic(
+  pattern=near_words, window=window_size
+) %>% as.data.frame()
 
 
+near_windows$merged <- paste(near_windows$pre, near_windows$keyword, near_windows$post)
+
+near_windows$merged
 
 ```
 
