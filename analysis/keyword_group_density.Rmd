@@ -22,8 +22,10 @@ library(readxl)
 
 inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
 submissions <- dbGetQuery(inquiries, 
-  'SELECT submission.*, submission_label.label FROM submission
+  'SELECT submission.*, submission_label.label, context 
+  FROM submission
   inner join submission_label using(inquiry_shortname, submission_id)
+  inner join inquiry using(inquiry_shortname)
   where priority = 1
   '
 ) %>% mutate(text = gsub("[‘’]", "'", text))
@@ -194,7 +196,8 @@ labels <- c(
   # Note that we're actually not choosing these for anything, we just need
   # the factors to have the same sets
   'commercialnon',
-  'notcategorisable'
+  'notcategorisable',
+  'electedrep'
 )
 
 
@@ -355,6 +358,17 @@ group_keywords <- filtered_rel_freq %>%
   select(keyword_from, feature) %>%
   union(illustrative_words)
 
+
+chosen_groups <- c(
+  'consumptive',
+  'environmental',
+  'firstnations',
+  'government',
+  'resourcemanagers',
+  'research',
+  'regional',
+  'electedrep'
+)
 
 # For each of the keywords remaining after filtering, find the co-occurring words
 # in each group of submissions. Each of these patterns is then a descriptive

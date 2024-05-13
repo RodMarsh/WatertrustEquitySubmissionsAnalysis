@@ -234,7 +234,8 @@ if not apply_labels_only:
         drop table if exists inquiry;
         create table inquiry (
             inquiry_shortname text primary key,
-            name
+            name,
+            context
         );
 
         drop table if exists submission;
@@ -303,7 +304,7 @@ if not apply_labels_only:
                 pass
 
             print(f"Processing {shortname=}")
-            db.execute("insert into inquiry values(:inquiry_shortname, :name)", inquiry)
+            db.execute("insert into inquiry values(:inquiry_shortname, :name, :context)", inquiry)
 
             with open(submissions_path, "r") as submissions_header:
                 submissions = csv.DictReader(submissions_header, quoting=csv.QUOTE_ALL)

@@ -162,4 +162,3 @@ near_windows$merged
 
 ```
 
-

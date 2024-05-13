@@ -32,8 +32,9 @@ library(writexl)
 
 inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
 submissions <- dbGetQuery(inquiries, 
-  'SELECT submission.*, submission_label.label FROM submission
+  'SELECT submission.*, submission_label.label, context FROM submission
   inner join submission_label using(inquiry_shortname, submission_id)
+  inner join inquiry using(inquiry_shortname)
   where priority = 1
   '
 ) %>% mutate(text = gsub("[‘’]", "'", text))
@@ -210,7 +211,7 @@ all_concordances <-  bind_rows(lapply(probe_words, single_word_concordance))
   
 # Merge the concordances with the document level count for sorting.
 # Also add the document level variables
-concordance_with_agg <- submissions[,c("doc_id", "url", "submitter", "inquiry_shortname", "label")] %>%
+concordance_with_agg <- submissions[,c("doc_id", "url", "submitter", "inquiry_shortname", "label", "context")] %>%
     merge(probe_counts, by="doc_id") %>%
     merge(all_concordances, by.x = "doc_id", by.y = "docname")
 
