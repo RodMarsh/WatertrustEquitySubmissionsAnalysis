@@ -1,0 +1,164 @@
+# Sensitivity Analysis
+
+The aim of this analysis is to check how sensitive the results of our keyword
+ranking are if we had included a different set of inquiries. As the chosen
+inquiries were intended to be a purposive sample there is the possibility that
+the keyword identification process could be affected by which inquiries we
+included. 
+
+To check this we perform a split-half sensitivity analysis for the ranking by:
+
+1. Splitting the included inquiries into two random batches, taking care that
+the two inquiries with pre/post draft decisions are kept together. 
+2. Applying the same keyword analysis procedure on submitter groups.
+3. Comparing the top ranked words from each half to the original ranking.
+
+```{r}
+
+library(DBI)
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(writexl)
+
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+
+submissions <- dbGetQuery(inquiries, 
+  'SELECT submission.*, submission_label.label, context FROM submission
+  inner join submission_label using(inquiry_shortname, submission_id)
+  inner join inquiry using(inquiry_shortname)
+  where priority = 1
+  '
+) %>% mutate(text = gsub("[‘’]", "'", text))
+
+# Generate a single column unique id - this is the composite primary key
+# defined in the database, so will always be unique. This is used to tie
+# together results at different granularities.
+submissions$doc_id <- paste(submissions$inquiry_shortname, submissions$submission_id)
+
+# Generate the full corpus, and the two half corpora
+submission_corpus <- corpus(submissions, text_field="text", docid_field = "doc_id")
+
+dbDisconnect(inquiries)
+```
+
+```{r}
+extended_stopwords <- c(
+  'pty', 
+  'ltd',
+  'pp',
+  'doi',
+  'e.g',
+  'et',
+  'al',
+  'eds',
+  'press',
+  'journal',
+  '10.1111',
+  'image',
+  'height',
+  'width',
+  'rgb',
+  'srgb',
+  'bpc',
+  '16',
+  'iccbased',
+  'eds',
+  'mr',
+  '2017',
+  '2013',
+  '41',
+  '95',
+  '87',
+  '8003',
+  '2006',
+  '2018',
+  '2601',
+  '02',
+  '43',
+  '145',
+  '664',
+  '163',
+  '215',
+  '349',
+  '159',
+  '315',
+  '141',
+  '359',
+  stopwords("english")
+)
+
+
+prep_dfm <- function(corpus) {
+  submission_tokens <- tokens(
+      corpus, remove_punct=TRUE, split_hyphens = TRUE, remove_symbols = TRUE
+    ) %>% 
+    tokens_remove(extended_stopwords, min_nchar=2)
+    # Only consider words that appear in at least 10 submissions
+    submissions_dfm <- dfm_trim(dfm(submission_tokens), min_docfreq=10)
+    
+    # This reduces every wordcount > 1 to 1.
+    submissions_boolean <- dfm_weight(submissions_dfm, scheme="boolean")
+    return(submissions_boolean)
+}
+
+top_keywords <- function(corpus, dfm, corpus_variable_name, variable) {
+  scores <- textstat_keyness(dfm, docvars(corpus, corpus_variable_name) == variable, "chi") %>%
+    mutate(rank=rank(desc(chi2), ties.method="random")) %>% # Break rank ties randomly
+    slice_min(rank, n=10)
+  scores <- scores %>% select(feature, rank)
+  scores$group <- variable
+  return(scores)
+}
+
+
+results <- list()
+
+# Note: some inquiries have pre/post draft phases, so we need to leave both
+# out at the same time.
+inquiries <- list(
+  # Note that this works because there is no inquiry named original, hence
+  # nothing is excluded.
+  c("Original"),
+  c("accc_mdb_water_markets_2019_interim","accc_mdb_water_markets_2019_issues" ),
+  c("hansard_various"),
+  c("mdba_bpa_2017"),
+  c("pc_nwf_2020_initial", "pc_nwf_2020_postdraft"),                 
+  c("sa_mdb_royal_commission_2018"),
+  c("select_committee_fph_2021"),             
+  c("select_committee_mdbp_2015"),
+  c("select_committee_restoring_rivers_2023")
+)
+
+
+for (inquiry in inquiries) {
+    leave_one_out <- submissions %>% filter(!inquiry_shortname %in% inquiry)
+    leave_one_out %>% count()
+    loo_corpus <- corpus(leave_one_out, text_field="text", docid_field = "doc_id") 
+    dfm <- prep_dfm(loo_corpus)
+    submitter_labels <- unique(leave_one_out$label)
+    for (label in submitter_labels) {
+      keywords <- top_keywords(loo_corpus, dfm, 'label', label)
+      keywords$leftout <- paste(inquiry, sep='', collapse=' ')
+      results <- append(results, list(keywords))
+    }
+}
+
+
+all_results <- bind_rows(results)
+
+comparisons <-  pivot_wider(
+  all_results, 
+  names_from=c("leftout"),
+  values_from=c("feature"), 
+  id_cols=c('group', 'rank')
+)
+
+write_xlsx(comparisons, "../results/sensitivity.xlsx")
+
+```
+
+
+```{r}
+comparisons
+```
