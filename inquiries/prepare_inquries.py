@@ -246,6 +246,7 @@ if not apply_labels_only:
             filepath,
             submitter,
             submitter_normalised,
+            submitter_canonical,
             text,
             -- The following are the constructed categories for
             -- the submitter, and are derived by manual labelling.
@@ -263,8 +264,6 @@ if not apply_labels_only:
             electedrep integer,
             primary key (inquiry_shortname, submission_id)
         );
-
-        drop table if exists submission_emfd_score;
 
         pragma journal_mode=WAL;
         pragma foreign_keys=1;
@@ -488,6 +487,7 @@ with open("submitter_labels_new.csv", "w") as f:
             "url",
             "submitter",
             "submitter_normalised",
+            "submitter_canonical",
             "environmental",
             "regional",
             "consumptive",
@@ -510,6 +510,7 @@ with open("submitter_labels_new.csv", "w") as f:
             url,
             submitter,
             submitter_normalised,
+            submitter_canonical,
             environmental,
             regional,
             consumptive,
