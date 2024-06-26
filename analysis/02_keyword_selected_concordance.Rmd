@@ -359,10 +359,11 @@ single_word_group_concordance <- function(i) {
   concordances <- kwic(
     tokens_subset, index=idx, window=20
   ) %>% as.data.frame()
+  
   concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
   concordances$keyword_from <- group
   
-  return(concordances %>% select(keyword_from, pattern, pre, keyword, post, merged))
+  return(concordances %>% select(docname, keyword_from, pattern, pre, keyword, post, merged))
 }
 
 concordances <- bind_rows(lapply(seq_along(keyword_sources$feature), single_word_group_concordance))
