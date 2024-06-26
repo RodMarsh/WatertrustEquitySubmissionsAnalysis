@@ -65,6 +65,12 @@ Almost all submissions are in PDF format already. However, not all submissions a
 
 All analysis code is in R notebooks in the `analysis` folder. They all assume that the data is read from the `inquiries/inquiries.db` SQLite database and that the `inquiries/prepare_inquiries.py` has been run.
 
+The main analyses are conducted in the following files:
+
+- `analysis/01_submission_summary.Rmd`
+- `analysis/02_keyword_selected_concordance.Rmd`
+- `analysis/04_sensitivity.Rmd`
+
 
 ## Adding a New Inquiry
 

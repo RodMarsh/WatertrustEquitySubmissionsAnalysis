@@ -1,0 +1,56 @@
+# Summary of submissions and formats.
+
+Show the summary of the submission counts and stakeholder groups for each
+inquiry and datasource included in the final data collection.
+
+```{r eval=FALSE}
+install.packages("RSQLite")
+install.packages("writexl")
+install.packages("tidyverse")
+install.packages("xtable")
+```
+
+# Load and prepare are submission data as extracted from the various inquiries
+```{r}
+library(DBI)
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(writexl)
+library(xtable)
+
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submission_summary <- dbGetQuery(inquiries, 
+  'SELECT inquiry.name, submission_label.label, count(*) as submission_count 
+  FROM submission
+  inner join submission_label using(inquiry_shortname, submission_id)
+  inner join inquiry using(inquiry_shortname)
+  where priority = 1
+  group by inquiry.name, submission_label.label
+  '
+)
+
+inquiry_summary <- submission_summary %>% 
+  group_by(name) %>% 
+  summarise(submission_count=sum(submission_count))
+
+inquiry_summary$label = 'Total'
+
+
+group_summary <- submission_summary %>% 
+  group_by(label) %>% 
+  summarise(submission_count=sum(submission_count))
+
+group_summary$name = 'Total'
+
+bind_rows(submission_summary, inquiry_summary)
+
+pivot_summary <- bind_rows(submission_summary, inquiry_summary, group_summary) %>% pivot_wider(names_from = c("label"), values_from=c("submission_count"))
+
+pivot_summary
+
+print(xtable(pivot_summary), include.rownames=FALSE)
+
+dbDisconnect(inquiries)
+
+```

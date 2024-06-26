@@ -1,0 +1,372 @@
+# Keyword, Concordance and Collocation Analysis
+
+This analysis aims to build keyword lists ranking words that are overused in
+particular inquiries, and by particular types of inquiry submissions. This is
+the starting point for further more detailed analysis of the individual 
+documents and to better understand which words are key for understanding the
+different landscapes of submissions (and submitters).
+
+The statistical procedures here are inspired by standard keyword detection as
+used in corpus linguistics, but with some key differences:
+
+1. The unit of analysis is the "submission", not the words used in a submission
+unlike corpus linguistics. This is important because there is significant 
+variation in basic things like the size of submissions - using individual words
+as the unit of analysis would put more weight on the longest submissions.
+
+```{r eval=FALSE}
+install.packages("quanteda")
+install.packages("quanteda.textstats")
+install.packages("RSQLite")
+install.packages("writexl")
+install.packages("tidyverse")
+install.packages("xtable")
+```
+
+# Load and prepare are submission data as extracted from the various inquiries
+```{r}
+library(DBI)
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(writexl)
+library(xtable)
+
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submissions <- dbGetQuery(inquiries, 
+  'SELECT submission.*, submission_label.label, context FROM submission
+  inner join submission_label using(inquiry_shortname, submission_id)
+  inner join inquiry using(inquiry_shortname)
+  where priority = 1
+  '
+) %>% mutate(text = gsub("[‘’]", "'", text))
+
+# Generate a single column unique id - this is the composite primary key
+# defined in the database, so will always be unique. This is used to tie
+# together results at different granularities.
+submissions$doc_id <- paste(submissions$inquiry_shortname, submissions$submission_id)
+submission_corpus <- corpus(submissions, text_field="text", docid_field = "doc_id")
+
+dbDisconnect(inquiries)
+
+```
+
+# Initial Keyword Ranking
+
+We'll start by assembling ranked keyword lists for each stakeholder group.
+
+This will take the approach of computing the chi-squared measure for differences
+for each group vs all other groups aggregated together. Unlike conventional
+corpus linguistics we will focus on word presence or absence in a document:
+if we took the conventional corpus linguistics approach and counted words
+aggregated across all stakeholder groups we would place significantly more
+weight on the longest submissions. 
+
+```{r}
+
+# These are the byproducts of extracting text from the PDF where images are
+# included.
+pdf_processing_words <- c(
+  'image',
+  'height',
+  'width',
+  'rgb',
+  'srgb',
+  'bpc',
+  '16',
+  'iccbased'
+)
+# These words are potential keywords, but reflect the genre and form of the
+# submission, not the substantive content.
+genre_words <- c(
+  'pty', 
+  'ltd',
+"etc",
+"re",
+"amendment",
+"bill",
+"chamber",
+"coalition",
+"commend",
+"debate",
+"deputy",
+"election",
+"electorate",
+"greens",
+"hanson",
+"labor",
+"legislation",
+"liberal",
+"minister",
+"opposition",
+"prime",
+"rise",
+"said",
+"say",
+"saying",
+"senator",
+"something",
+"speak",
+"speaker",
+"speech",
+"sure",
+"talk",
+"talked",
+"talking",
+"things",
+"think",
+"today",
+"want",
+"went",
+"authority",
+"authority",
+"basin",
+"darling",
+"sincerely",
+"submission",
+"067",
+"1801",
+"bag",
+"compiling",
+"contact",
+"cr",
+"fax",
+"gpo",
+"hon",
+"manager",
+"mayor",
+"mlc",
+"mp",
+"nicholson",
+"ref",
+"street",
+"telephone",
+"terrace",
+"welcomes",
+"____",
+"ater",
+"com",
+"con",
+"en",
+"fig",
+"fo",
+"hello",
+"ion",
+"les",
+"ll",
+"lo",
+"ns",
+"redacted",
+"tions",
+"tt",
+"ve",
+"167",
+"1944",
+"associate",
+"association",
+"box",
+"bradbury",
+"cr",
+"emma",
+"inc",
+"officer",
+"po",
+"shire",
+"www.mda.asn.au",
+"10.1080",
+"141",
+"145",
+"146",
+"159",
+"163",
+"265",
+"315",
+"342",
+"349",
+"359",
+"664",
+"722",
+"academy",
+"institute",
+"phd",
+"professor",
+"r.j",
+"r.m",
+"sciences",
+"society",
+"university",
+"acn",
+"10.1111",
+"al",
+"doi",
+"e.g",
+"eds",
+"et",
+"pp",
+"8003"
+)
+
+extended_stopwords <- c(
+  genre_words,
+  pdf_processing_words,
+  stopwords("english")
+)
+
+submission_tokens <- tokens(
+    submission_corpus, remove_punct=TRUE, split_hyphens = TRUE, remove_symbols = TRUE
+  ) %>% 
+  tokens_remove(extended_stopwords, min_nchar=2)
+
+# Only consider words that appear in at least 10 submissions overall.
+submissions_dfm <- dfm_trim(dfm(submission_tokens), min_docfreq=10)
+
+# This reduces every wordcount > 1 to 1.
+submissions_boolean <- dfm_weight(submissions_dfm, scheme="boolean")
+
+score_keywords <- function(keyword_dfm, corpus_variable_name, variable) {
+  scores <- textstat_keyness(keyword_dfm, docvars(submission_corpus, corpus_variable_name) == variable, "chi") %>%
+    mutate(rank=rank(desc(chi2), ties.method="random"))
+  scores$variable_name <- corpus_variable_name
+  scores$variable <- variable
+  return(scores)
+}
+
+# Accumulate scores for each stakeholder group.
+submitter_labels <- unique(submissions$label)
+
+results <- list()
+for (label in submitter_labels) {
+    scores = score_keywords(submissions_boolean, 'label', label)
+    scores$keyword_from <- label
+    results <- append(results, list(scores))
+  }
+
+# Filter and merge all of the lists to identify the top k keywords for each slice
+all_scores = bind_rows(results)
+keyword_sources = all_scores %>%
+  filter(rank <= 50) %>% 
+  select(feature, keyword_from, rank)
+
+# Pivot to wide form with one row per feature to allow cross cutting comparison
+keywords_final <- pivot_wider(
+  keyword_sources, 
+  names_from=c("keyword_from"), 
+  values_from=c("feature"),
+  id_cols = c("rank")
+)
+
+# Version for detailed examination
+write_xlsx(keywords_final, "../results/initial_keywords.xlsx")
+
+print(xtable(keywords_final %>% select(!rank)), include.rownames=FALSE)
+```
+
+# Keyword collocates and concordances
+
+To contextualise each keyword we will extract the collocating words. A word is
+a colocate with a keyword if it is statistically more likely to occur within
+10 words of the keyword than in other places in the submissions.
+
+```{r}
+
+# Extract collocations of each keyword in that specific group.
+extract_collocations <- function(i) {
+  feature <- keyword_sources$feature[i]
+  group <- keyword_sources$keyword_from[i]
+  
+  # Look at tokens only for the documents in the group: otherwise we mix keyword
+  # meanings from other groups.
+  group_tokens = submission_tokens[docvars(submission_corpus, 'label') == group]
+  
+  # Construct two objects: one containing just the regions
+  # around the keyword of interest, the other all of the
+  # other regions (both removing the keywords themselves).
+  # Then the collocation check is a keyword test.
+  # See: https://tutorials.quanteda.io/advanced-operations/target-word-collocations/
+  windowsize <- 5
+  tokens_inside <- tokens_keep(
+    group_tokens, 
+    pattern=feature, 
+    valuetype='fixed', 
+    # Note that window is after removing stop words and punctuation, so
+    # is effectively longer than you might first think.
+    window=windowsize
+  )
+  tokens_inside <- tokens_remove(
+    tokens_inside, pattern=feature, valuetype='fixed'
+  )
+  tokens_outside <- tokens_remove(
+    group_tokens, pattern=feature, valuetype='fixed', window=windowsize
+  )
+  
+  # Note we're also excluding low document frequency words for collocates.
+  # The threshold is a bit lower to allow a bit more diversity in the
+  # collocating words.
+  # We're also determining collocations only for the group that generated
+  # the keyword so we can understand it in context for that group.
+  dfm_inside <- dfm_trim(dfm(tokens_inside), min_docfreq=3)
+  dfm_outside <- dfm_trim(dfm(tokens_outside), min_docfreq=3)
+                         
+  group_score <- textstat_keyness(
+    rbind(dfm_inside, dfm_outside), 
+    target = seq_len(ndoc(dfm_inside))
+  ) %>% 
+  slice(1:10) %>% 
+  mutate(rank=rank(desc(chi2)))
+  
+  group_score$keyword = feature
+  group_score$keyword_from = group
+  return(group_score)
+}
+
+collocations <- bind_rows(lapply(seq_along(keyword_sources$feature), extract_collocations))
+
+wide_grouped_ranked_collocates <- collocations %>%
+  group_by(keyword_from, keyword) %>%
+  arrange(rank, .by_group = TRUE) %>%
+  summarise(collocated_features = paste0(feature, collapse=", "))
+
+# Also extract a sample of concordance lines for each keyword in its 
+# own group and all other groups.
+
+write_xlsx(wide_grouped_ranked_collocates, "../results/keywords_with_collocates.xlsx")
+
+```
+
+# Concordances
+
+In this final part we will construct matching concordances within each group for
+the keywords. These complement the collocates by indicating how keywords are 
+used in specific contexts only.
+
+```{r}
+# Don't remove stopwords and punctuation for this phase as we want to generate
+# readable concordance lines.
+raw_tokens = tokens(submission_corpus,  split_hyphens = TRUE)
+
+# Create a sample of concordances for selected words
+single_word_group_concordance <- function(i) {
+  feature <- keyword_sources$feature[i]
+  group <- keyword_sources$keyword_from[i]
+  
+  tokens_subset = raw_tokens[docvars(submission_corpus, 'label') == group]
+  
+  # Find matches, but don't generate full concordances yet
+  idx = index(tokens_subset, feature, valuetype="fixed")
+  # Subsample matches
+  idx <- idx[sample(nrow(idx), min(nrow(idx), 20)),]
+
+  concordances <- kwic(
+    tokens_subset, index=idx, window=20
+  ) %>% as.data.frame()
+  concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
+  concordances$keyword_from <- group
+  
+  return(concordances %>% select(keyword_from, pattern, pre, keyword, post, merged))
+}
+
+concordances <- bind_rows(lapply(seq_along(keyword_sources$feature), single_word_group_concordance))
+
+write_xlsx(concordances, "../results/keyword_group_concordances.xlsx")
+
+```
