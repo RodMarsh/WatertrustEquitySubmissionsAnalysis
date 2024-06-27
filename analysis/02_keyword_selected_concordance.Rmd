@@ -261,11 +261,14 @@ write_xlsx(keywords_final, "../results/initial_keywords.xlsx")
 print(xtable(keywords_final %>% select(!rank)), include.rownames=FALSE)
 ```
 
-# Keyword collocates and concordances
+# Keyword collocates
 
 To contextualise each keyword we will extract the collocating words. A word is
 a colocate with a keyword if it is statistically more likely to occur within
-10 words of the keyword than in other places in the submissions.
+10 words of the keyword than in other places in the submissions. Note that this
+block generates all of the collocations in bulk - the following section will
+combine collocations with rel freq across groups to allow some limited comparative
+analysis.
 
 ```{r}
 
@@ -333,40 +336,120 @@ write_xlsx(wide_grouped_ranked_collocates, "../results/keywords_with_collocates.
 
 ```
 
+# Keyword Relative Frequency Across Groups and collocation summary
+
+In order to compare the frequency of keywords across groups it is useful to
+look at just the selected set of keywords.
+
+``` {r}
+# Count number of submissions from each group containing the words
+group_word_counts <- dfm_group(submissions_boolean, groups = label) %>% 
+  convert('data.frame') %>%
+  rename(label=doc_id) %>%
+  pivot_longer(!label, values_to="count", names_to="feature") %>%
+  select(label, feature, count)
+
+# Total document counts for each group 
+group_docs <- submissions %>% count(label)
+
+# Relative frequencies within each group of submitters
+relative_frequencies <- group_word_counts %>% 
+  inner_join(group_docs, by = c("label")) %>%
+  mutate(relative_freq = 100 * count / n)
+
+# Note that we're only ever going to plot a specific subset of these words
+# at a time - otherwise this will be completely overwhelming.
+plot_groupwise_rel_freqs <- function (args) {
+  highlight_group = args[[1]]
+  keywords = args[[2]]
+  subset <- relative_frequencies %>% filter(feature %in% keywords)
+  subset$selected_group <- subset$label == highlight_group
+
+  subset$feature <- factor(subset$feature, levels=arrange(filter(subset, label==highlight_group), desc(relative_freq))$feature)
+  
+  small_multi <-
+    ggplot(subset, aes(y=relative_freq, x=label, fill=selected_group)) +
+    guides(fill="none") +
+    geom_col() +
+    # coord_flip() +
+    facet_grid(rows=vars(feature), switch="y") +
+    theme_minimal() +
+    theme(panel.spacing.x=unit(0.2, "cm"), panel.spacing.y=unit(0.2, "cm")) +
+    scale_y_continuous(name="% of Submissions", position="right") +
+    scale_x_discrete(name="Stakeholder Group", guide = guide_axis(angle = 45)) +
+    geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5)
+    filename <- paste(c("../results/group_comparison", highlight_group, paste(keywords, collapse="_"), ".pdf"), collapse="_")
+    ggsave(filename, plot = small_multi, width=180/25.4, height=(length(keywords)*20/25.4) + 40/25.4)
+  return(small_multi)
+}
+
+create_latex_table <- function(args) {
+  highlight_group = args[[1]]
+  keywords = args[[2]]
+
+  selected_words <- wide_grouped_ranked_collocates %>% 
+    filter(keyword_from==highlight_group, keyword %in% keywords) %>%
+    inner_join(relative_frequencies, 
+               by=join_by(keyword_from==label, keyword==feature)) %>%
+    arrange(desc(relative_freq)) %>% ungroup %>%
+    select(keyword, collocated_features)
+
+  print(xtable(selected_words), file="../results/latex_tables.txt", include.rownames=FALSE, append=TRUE)
+  return(selected_words)
+}
+
+groups_to_visualise <- list(
+  list('consumptive', c("acres", "barley", "cattle", "cereals", "dairy", "growers", "pasture", "planted")),
+  list('consumptive', c("feral"))
+)
+
+lapply(groups_to_visualise, plot_groupwise_rel_freqs)
+lapply(groups_to_visualise, create_latex_table)
+
+```
+
 # Concordances
 
 In this final part we will construct matching concordances within each group for
 the keywords. These complement the collocates by indicating how keywords are 
-used in specific contexts only.
+used in each group, and allows us to do cross comparison of words in different
+groups to understand whether keywords are used the same or differently.
 
 ```{r}
 # Don't remove stopwords and punctuation for this phase as we want to generate
 # readable concordance lines.
 raw_tokens = tokens(submission_corpus,  split_hyphens = TRUE)
 
-# Create a sample of concordances for selected words
-single_word_group_concordance <- function(i) {
-  feature <- keyword_sources$feature[i]
-  group <- keyword_sources$keyword_from[i]
+# Create a sample of concordances for selected words in each group.
+single_word_group_concordance <- function(feature, groups) {
   
-  tokens_subset = raw_tokens[docvars(submission_corpus, 'label') == group]
+  results <- list()
   
-  # Find matches, but don't generate full concordances yet
-  idx = index(tokens_subset, feature, valuetype="fixed")
-  # Subsample matches
-  idx <- idx[sample(nrow(idx), min(nrow(idx), 20)),]
-
-  concordances <- kwic(
-    tokens_subset, index=idx, window=20
-  ) %>% as.data.frame()
+  for (group in groups) {
+    tokens_subset = raw_tokens[docvars(submission_corpus, 'label') == group]
+    
+    # Find matches, but don't generate full concordances yet
+    idx = index(tokens_subset, feature, valuetype="fixed")
+    # Subsample matches
+    idx <- idx[sample(nrow(idx), min(nrow(idx), 20)),]
+    if (nrow(idx) > 0) {
+      concordances <- kwic(
+        tokens_subset, index=idx, window=20
+      ) %>% as.data.frame()
+      
+      concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
+      concordances$keyword_from <- group
+      concordances <- concordances %>% 
+        select(docname, keyword_from, pattern, pre, keyword, post, merged)
+      
+      results <- append(results, list(concordances))
+    }
+  }
   
-  concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
-  concordances$keyword_from <- group
-  
-  return(concordances %>% select(docname, keyword_from, pattern, pre, keyword, post, merged))
+  return(bind_rows(results))
 }
 
-concordances <- bind_rows(lapply(seq_along(keyword_sources$feature), single_word_group_concordance))
+concordances <- bind_rows(lapply(keyword_sources$feature, single_word_group_concordance, groups=unique(keyword_sources$keyword_from)))
 
 write_xlsx(concordances, "../results/keyword_group_concordances.xlsx")
 
