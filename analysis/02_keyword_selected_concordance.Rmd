@@ -286,7 +286,7 @@ extract_collocations <- function(i) {
   # other regions (both removing the keywords themselves).
   # Then the collocation check is a keyword test.
   # See: https://tutorials.quanteda.io/advanced-operations/target-word-collocations/
-  windowsize <- 5
+  windowsize <- 10
   tokens_inside <- tokens_keep(
     group_tokens, 
     pattern=feature, 
@@ -409,10 +409,36 @@ create_latex_table <- function(args) {
 }
 
 groups_to_visualise <- list(
-  list('consumptive', c("acres", "barley", "cattle", "cereals", "dairy", "growers", "pasture", "planted")),
+  list('commercialnon', c("opaque")),
+  list('commercialnon', c("scarcity")),
+  list('commercialnon', c("brokers", "clients", "intermediaries", "participants")),
+  list('consumptive', c("family", "farmer", "farming")),
+  list('consumptive', c("farmers", "growers")),
+  list('consumptive', c("acres", "barley", "cereals", "planted")),
+  list('consumptive', c("dairy", "cattle", "pasture")),
   list('consumptive', c("feral")),
   list('consumptive', c("450gl", "650gl", "ml")),
-  list('consumptive', c("permanent", "temporary", "entitlement", "speculators", "traders", "carryover", "choke", "valley"))
+  list('consumptive', c("permanent", "temporary", "entitlement", "carryover")),
+  list('consumptive', c("choke", "valley", "valleys")),
+  list('consumptive', c("speculators", "traders")),
+  list('electedrep', c("overallocation")),
+  list('electedrep', c("1,500", "2,750", "450", "gigalitre", "gigalitres")),
+  list('resourcemanagers', c("greening", "amenity", "livability")),
+  list('resourcemanagers', c("covid", "pandemic")),
+  list('resourcemanagers', c("utilities", "wastewater", "stormwater", "potable")),
+  list('resourcemanagers', c("customer", "customers")),
+  list('regional', c("390gl", "320gl")),
+  list('regional', c("resident")),
+  list('regional', c("equitable", "greedy", "wellbeing")),
+  list('regional', c("yabbies", "revegetation", "tourism")),
+  # First Nations
+  list('firstnations', c("cultural", "spiritual")),
+  list('firstnations', c("foods")),
+  # Government
+  list('government', c("undergone", "undertaken", "undertakes", "undertook", "underway")),
+  # Research
+  # Environmental
+  list('environmental', c("migratory", "ramsar"))
 )
 
 # Clear out the table file of previous results
@@ -443,17 +469,43 @@ single_word_group_concordance <- function(i, groups) {
   results <- list()
   
   for (group in groups) {
-    tokens_subset = raw_tokens[docvars(submission_corpus, 'label') == group]
     
-    # Find matches, but don't generate full concordances yet
-    idx = index(tokens_subset, feature, valuetype="fixed")
-    # Subsample matches
-    idx <- idx[sample(nrow(idx), min(nrow(idx), 20)),]
-    if (nrow(idx) > 0) {
+    if (group != 'environmental') {
+      tokens_subset = raw_tokens[docvars(submission_corpus, 'label') == group]
+      # Find matches, but don't generate full concordances yet
+      idx = index(tokens_subset, feature, valuetype="fixed")
+      # Subsample matches
+      idx <- idx[sample(nrow(idx), min(nrow(idx), 20)),]
       concordances <- kwic(
         tokens_subset, index=idx, window=20
       ) %>% as.data.frame()
+    } else {
+      # Special case the environmental submissions to handle the multiple 
+      # duplicates by also taking concordances from elsewhere. We'll take
+      # a sample of 10 concordance lines from the mdba_bpa_2017, 10 from
+      # all other inquiries.
+      tokens_mdba = raw_tokens[docvars(submission_corpus, 'label') == group & docvars(submission_corpus, 'inquiry_shortname') == 'mdba_bpa_2017']
+      tokens_other = raw_tokens[docvars(submission_corpus, 'label') == group & docvars(submission_corpus, 'inquiry_shortname') != 'mdba_bpa_2017']
       
+      idx_mdba = index(tokens_mdba, feature, valuetype="fixed")
+      idx_other = index(tokens_other, feature, valuetype="fixed")
+      # Subsample matches
+      idx_mdba <- idx_mdba[sample(nrow(idx_mdba), min(nrow(idx_mdba), 10)),]
+      idx_other <- idx_other[sample(nrow(idx_other), min(nrow(idx_other), 10)),]
+      
+      concordances_mdba <- kwic(
+        tokens_mdba, index=idx_mdba, window=20
+      ) %>% as.data.frame()
+      
+      concordances_other <- kwic(
+        tokens_other, index=idx_other, window=20
+      ) %>% as.data.frame()
+      
+      concordances <- concordances_mdba %>% union(concordances_other)
+      
+    }
+
+    if (nrow(concordances) > 0) {
       concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
       concordances$keyword_from <- keyword_from
       concordances$concordances_for <- group
