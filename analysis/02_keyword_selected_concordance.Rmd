@@ -384,12 +384,16 @@ plot_groupwise_rel_freqs <- function (args) {
     # coord_flip() +
     facet_grid(rows=vars(feature), switch="y") +
     theme_minimal() +
-    theme(panel.spacing.x=unit(0.2, "cm"), panel.spacing.y=unit(0.2, "cm")) +
-    scale_y_continuous(name="% of Submissions", position="right") +
+    theme(axis.title.x=element_blank(), 
+          panel.spacing.x=unit(0.2, "cm"), 
+          panel.spacing.y=unit(0.2, "cm"),
+          strip.text.y.left = element_text(angle = 0)) +
+    scale_y_continuous(name="%", position="right") +
     scale_x_discrete(name="Stakeholder Group", guide = guide_axis(angle = 45)) +
-    geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5)
+    geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5) 
     filename <- paste(c("../results/group_comparison", highlight_group, keywords[1], ".pdf"), collapse="_")
-    ggsave(filename, plot = small_multi, width=180/25.4, height=(length(keywords)*20/25.4) + 40/25.4)
+    print(filename)
+    ggsave(filename, plot = small_multi, width=180/25.4, height=(length(keywords)*8/25.4) + 40/25.4)
   return(small_multi)
 }
 
@@ -409,20 +413,27 @@ create_latex_table <- function(args) {
 }
 
 groups_to_visualise <- list(
-  list('commercialnon', c("opaque")),
-  list('commercialnon', c("scarcity")),
-  list('commercialnon', c("brokers", "clients", "intermediaries", "participants")),
+  list('commercialnon', c("opaque", "scarcity")),
+  list('commercialnon', c("clients", "intermediaries", "participants")),
+  list('commercialnon', c("bids",
+    "buyer",
+    "buyers",
+    "contract",
+    "incentivised",
+    "indemnity",
+    "investors",
+    "ivt",
+    "liquidity")),
   list('consumptive', c("family", "farmer", "farming")),
-  list('consumptive', c("farmers", "growers")),
-  list('consumptive', c("acres", "barley", "cereals", "planted")),
-  list('consumptive', c("dairy", "cattle", "pasture")),
+  list('consumptive', c("barley", "cereals", "planted")),
+  list('consumptive', c("dairy", "cattle", "livestock")),
   list('consumptive', c("feral")),
   list('consumptive', c("450gl", "650gl", "ml")),
   list('consumptive', c("permanent", "temporary", "entitlement", "carryover")),
   list('consumptive', c("choke", "valley", "valleys")),
   list('consumptive', c("speculators", "traders")),
   list('electedrep', c("overallocation")),
-  list('electedrep', c("1,500", "2,750", "450", "gigalitre", "gigalitres")),
+  list('electedrep', c("1,500", "2,750", "450", "gigalitres")),
   list('resourcemanagers', c("greening", "amenity", "livability")),
   list('resourcemanagers', c("covid", "pandemic")),
   list('resourcemanagers', c("utilities", "wastewater", "stormwater", "potable")),
@@ -435,7 +446,14 @@ groups_to_visualise <- list(
   list('firstnations', c("cultural", "spiritual")),
   list('firstnations', c("foods")),
   # Government
-  list('government', c("undergone", "undertaken", "undertakes", "undertook", "underway")),
+  list('government', c("accordance",
+    "assurance",
+    "benchmark",
+    "coordinated",
+    "coordination",
+    "undergone",
+    "undertaken")
+),
   # Research
   # Environmental
   list('environmental', c("migratory", "ramsar"))
