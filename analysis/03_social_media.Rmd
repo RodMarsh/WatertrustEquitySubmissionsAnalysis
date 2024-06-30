@@ -1,0 +1,40 @@
+# Summary of submissions and formats.
+
+Show the summary of the submission counts and stakeholder groups for each
+inquiry and datasource included in the final data collection.
+
+```{r eval=FALSE}
+install.packages("writexl")
+install.packages("tidyverse")
+install.packages("xtable")
+install.packages("ggplot2")
+```
+
+# Load and prepare are submission data as extracted from the various inquiries
+```{r}
+library(tidyverse)
+library(writexl)
+library(xtable)
+library(ggplot2)
+
+monthly_counts <- read_csv('../data/1_counts_data/tweet_counts_monthly.csv')
+monthly_counts$year_month = as.Date(
+  paste(monthly_counts$year, "-", monthly_counts$month, "-1", sep=""),
+  format="%Y-%m-%d"
+) 
+
+monthly_counts <- monthly_counts %>% 
+  select(year_month, total_tweets, num_not_rt) %>%
+  pivot_longer(!year_month, values_to="tweet_count")
+
+ggplot(monthly_counts, aes(x=year_month, y=tweet_count, colour=name)) +
+  guides(fill="none") +
+  geom_line() + 
+  scale_y_continuous(name="Tweet Count") +
+  scale_x_date(name="Year") +
+  theme_minimal() +
+  labs(color="Counts") +
+  scale_color_manual(labels = c("Original Tweets", "All Tweets"), values = c("darkgray", "black"))
+
+```
+
