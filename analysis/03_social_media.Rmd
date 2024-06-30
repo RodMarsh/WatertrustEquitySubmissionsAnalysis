@@ -27,14 +27,16 @@ monthly_counts <- monthly_counts %>%
   select(year_month, total_tweets, num_not_rt) %>%
   pivot_longer(!year_month, values_to="tweet_count")
 
-ggplot(monthly_counts, aes(x=year_month, y=tweet_count, colour=name)) +
+tweet_counts <- ggplot(monthly_counts, aes(x=year_month, y=tweet_count, colour=name)) +
   guides(fill="none") +
   geom_line() + 
   scale_y_continuous(name="Tweet Count") +
   scale_x_date(name="Year") +
   theme_minimal() +
   labs(color="Counts") +
-  scale_color_manual(labels = c("Original Tweets", "All Tweets"), values = c("darkgray", "black"))
+  scale_color_manual(labels = c("Excluding Retweets", "All Tweets"), values = c("darkgray", "black"))
+
+ggsave("../results/tweet_counts.pdf", plot = tweet_counts, width=180/25.4, height=40/25.4)
 
 ```
 
