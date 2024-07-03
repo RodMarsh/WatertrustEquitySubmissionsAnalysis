@@ -1,7 +1,7 @@
-# Summary of submissions and formats.
+# Summary of social media approach
 
-Show the summary of the submission counts and stakeholder groups for each
-inquiry and datasource included in the final data collection.
+The approach here is to compare historical trends in social media discussions to
+the 
 
 ```{r eval=FALSE}
 install.packages("writexl")
@@ -27,6 +27,9 @@ monthly_counts <- monthly_counts %>%
   select(year_month, total_tweets, num_not_rt) %>%
   pivot_longer(!year_month, values_to="tweet_count")
 
+monthly_counts %>% filter(name == 'total_tweets') %>% group_by(name) %>% summarise(total=sum(tweet_count))
+
+
 tweet_counts <- ggplot(monthly_counts, aes(x=year_month, y=tweet_count, colour=name)) +
   guides(fill="none") +
   geom_line() + 
@@ -36,7 +39,41 @@ tweet_counts <- ggplot(monthly_counts, aes(x=year_month, y=tweet_count, colour=n
   labs(color="Counts") +
   scale_color_manual(labels = c("Excluding Retweets", "All Tweets"), values = c("darkgray", "black"))
 
+tweet_counts
+
 ggsave("../results/tweet_counts.pdf", plot = tweet_counts, width=180/25.4, height=40/25.4)
 
 ```
 
+# Selected Keyword Trends
+``` {r}
+
+token_counts <- read_csv('../data/2_word_counts/token_count_monthly.csv')
+token_counts$year_month = as.Date(
+  paste(token_counts$year, "-", token_counts$month, "-1", sep=""),
+  format="%Y-%m-%d"
+) 
+
+keywords <- c("flood", "auspol", "fish", "royal", "4corners", "barnaby", "water")
+
+selected_counts <- token_counts %>% filter(t %in% keywords) %>% 
+  select(year_month, t, n_tweets, num_not_rt) %>%
+  pivot_longer(all_of(c("n_tweets", "num_not_rt")), names_to="name", values_to="tweet_count")
+
+selected_counts
+
+tweet_counts <- ggplot(selected_counts, aes(x=year_month, y=tweet_count, colour=name)) +
+  guides(fill="none") +
+  geom_line() +
+  facet_grid(t ~ .) +
+  scale_y_continuous(name="Tweet Count") +
+  scale_x_date(name="Year") +
+  theme_minimal() +
+  labs(color="Counts") +
+  scale_color_manual(labels = c("All Tweets", "Excluding Retweets"), values = c("black", "darkgray"))
+
+tweet_counts
+
+ggsave("../results/keyword_trend_counts.pdf", plot = tweet_counts, width=180/25.4, height=150/25.4)
+
+```
