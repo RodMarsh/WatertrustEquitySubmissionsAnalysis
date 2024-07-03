@@ -439,12 +439,21 @@ groups_to_visualise <- list(
   list('resourcemanagers', c("utilities", "wastewater", "stormwater", "potable")),
   list('resourcemanagers', c("customer", "customers")),
   list('regional', c("390gl", "320gl")),
-  list('regional', c("resident")),
+  list('regional', c("resident", "lived", "lga", "km2")),
   list('regional', c("equitable", "greedy", "wellbeing")),
-  list('regional', c("yabbies", "revegetation", "tourism")),
+  list('regional', c("yabbies", "revegetation")),
+  list('regional', c("councils", "interagency", "referenced", "website")),
+  list('regional', c("tourism")),
+  # Research
+  list('research', c("biology", "biota", "bodied", "decentralised", "linear", 
+                     "landsat", "mortality", "scales", "sensing", "stressors")),
   # First Nations
-  list('firstnations', c("cultural", "spiritual")),
-  list('firstnations', c("foods")),
+  list('firstnations', c("colonisation", "dispossessed", "neoliberal", "nullius")),
+  list('firstnations', c("aboriginal", "indigenous", "lands", "peoples")),
+  list('firstnations', c("nban", "mldrin")),
+  list('firstnations', c("kon", "undrip", "title")),
+  list('firstnations', c("cultural", "spiritual", "traditions", "sacred", "customs")),
+  list('firstnations', c("foods", "hunting", "medicine")),
   # Government
   list('government', c("accordance",
     "assurance",
@@ -456,7 +465,29 @@ groups_to_visualise <- list(
 ),
   # Research
   # Environmental
-  list('environmental', c("migratory", "ramsar"))
+  list('environmental', c("migratory", "ramsar")),
+  list('environmental', c(
+    "415",
+    "available",
+    "gwydir",
+    "reduction",
+    "significant",
+    "species",
+    "stress"
+    )
+  ),
+ list('environmental', c(
+    "birds",
+    "fish",
+    "wildlife"
+ )),
+ list('environmental', c(
+    "ecological",
+    "vulnerable",
+    "stress",
+    "wetlands",
+    "marshes")
+  )
 )
 
 # Clear out the table file of previous results
