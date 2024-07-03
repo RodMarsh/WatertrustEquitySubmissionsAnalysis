@@ -17,8 +17,7 @@ the two inquiries with pre/post draft decisions are kept together.
 
 library(DBI)
 library(tidyverse)
-library(quanteda)
-library(quanteda.textstats)
+library(xtable)
 library(writexl)
 
 inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
@@ -258,6 +257,8 @@ comparisons <-  pivot_wider(
 )
 
 write_xlsx(comparisons, "../results/sensitivity.xlsx")
+
+print(xtable(comparisons %>% filter(group=='environmental') %>% select(c("Original", "mdba_bpa_2017"))), include.rownames=FALSE)
 
 ```
 
