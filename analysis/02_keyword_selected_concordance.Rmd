@@ -464,6 +464,10 @@ groups_to_visualise <- list(
     "undertaken")
 ),
   # Research
+  list('research', c("journal", "australasian")),
+  list('research', c("decentralised", "scales", "linear")),
+  list('research', c("mortality", "stressors", "biota")),
+  list('research', c("sensing", "landsat")),
   # Environmental
   list('environmental', c("migratory", "ramsar")),
   list('environmental', c(
