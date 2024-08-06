@@ -372,6 +372,17 @@ relative_frequencies <- group_word_counts %>%
 plot_groupwise_rel_freqs <- function (args) {
   highlight_group = args[[1]]
   keywords = args[[2]]
+  subgroup_no = args[[3]]
+  figure_order = args[[4]]
+  
+  # Make sure the output directories exist
+  output_group = paste(c("../results/by_group/", highlight_group), collapse="")
+  if (!dir.exists(output_group)) {dir.create(output_group)}
+    
+  output_subgroup = paste(c(output_group, "/", subgroup_no), collapse="")
+  if (!dir.exists(output_subgroup)) {dir.create(output_subgroup)}
+  
+  
   subset <- relative_frequencies %>% filter(feature %in% keywords, label!='notcategorisable')
   subset$selected_group <- subset$label == highlight_group
 
@@ -381,7 +392,6 @@ plot_groupwise_rel_freqs <- function (args) {
     ggplot(subset, aes(y=relative_freq, x=label, fill=selected_group)) +
     guides(fill="none") +
     geom_col() +
-    # coord_flip() +
     facet_grid(rows=vars(feature), switch="y") +
     theme_minimal() +
     theme(axis.title.x=element_blank(), 
@@ -391,15 +401,22 @@ plot_groupwise_rel_freqs <- function (args) {
     scale_y_continuous(name="%", position="right") +
     scale_x_discrete(name="Stakeholder Group", guide = guide_axis(angle = 45)) +
     geom_hline(yintercept = 0, color = "#666666", linewidth = 0.5) 
-    filename <- paste(c("../results/group_comparison", highlight_group, keywords[1], ".pdf"), collapse="_")
+  
+    filename <- paste(c(output_subgroup, "/", figure_order, "_", keywords[1], ".pdf"), collapse="")
     print(filename)
-    ggsave(filename, plot = small_multi, width=180/25.4, height=(length(keywords)*8/25.4) + 40/25.4)
+    ggsave(filename, plot = small_multi, width=90/25.4, height=(length(keywords)*8/25.4) + 40/25.4)
   return(small_multi)
 }
 
 create_latex_table <- function(args) {
   highlight_group = args[[1]]
   keywords = args[[2]]
+  subgroup_no = args[[3]]
+  figure_order = args[[4]]
+  
+  # This runs after the figure creation so the folders will exist already.
+  output_subgroup = paste(c("../results/by_group/", highlight_group, "/", subgroup_no), collapse="")
+  filename <- paste(c(output_subgroup, "/", figure_order, "_", keywords[1], ".html"), collapse="")
 
   selected_words <- wide_grouped_ranked_collocates %>% 
     filter(keyword_from==highlight_group, keyword %in% keywords) %>%
@@ -409,12 +426,14 @@ create_latex_table <- function(args) {
     select(keyword, collocated_features)
 
   print(xtable(selected_words), file="../results/latex_tables.txt", include.rownames=FALSE, append=TRUE)
+  print(xtable(selected_words), type = "html", file = filename)
   return(selected_words)
 }
 
 groups_to_visualise <- list(
-  list('commercialnon', c("opaque", "scarcity")),
-  list('commercialnon', c("clients", "intermediaries", "participants")),
+  # commercial, non-consumptive
+  list('commercialnon', c("clients", "intermediaries", "participants"), "1", "a"),
+  list('commercialnon', c("opaque", "scarcity"), "1", "b"),
   list('commercialnon', c("bids",
     "buyer",
     "buyers",
@@ -423,37 +442,46 @@ groups_to_visualise <- list(
     "indemnity",
     "investors",
     "ivt",
-    "liquidity")),
-  list('consumptive', c("family", "farmer", "farming")),
-  list('consumptive', c("barley", "cereals", "planted")),
-  list('consumptive', c("dairy", "cattle", "livestock")),
-  list('consumptive', c("feral")),
-  list('consumptive', c("450gl", "650gl", "ml")),
-  list('consumptive', c("permanent", "temporary", "entitlement", "carryover")),
-  list('consumptive', c("choke", "valley", "valleys")),
-  list('consumptive', c("speculators", "traders")),
-  list('electedrep', c("overallocation")),
-  list('electedrep', c("1,500", "2,750", "450", "gigalitres")),
-  list('resourcemanagers', c("greening", "amenity", "livability")),
-  list('resourcemanagers', c("covid", "pandemic")),
-  list('resourcemanagers', c("utilities", "wastewater", "stormwater", "potable")),
-  list('resourcemanagers', c("customer", "customers")),
-  list('regional', c("390gl", "320gl")),
-  list('regional', c("resident", "lived", "lga", "km2")),
-  list('regional', c("equitable", "greedy", "wellbeing")),
-  list('regional', c("yabbies", "revegetation")),
-  list('regional', c("councils", "interagency", "referenced", "website")),
-  list('regional', c("tourism")),
-  # Research
-  list('research', c("biology", "biota", "bodied", "decentralised", "linear", 
-                     "landsat", "mortality", "scales", "sensing", "stressors")),
+    "liquidity"), "2", "a"),
+  
+  # consumptive water users
+  list('consumptive', c("family", "farmer", "farming"), "1", "a"),
+  list('consumptive', c("dairy", "cattle", "livestock"), "1", "b"),
+  
+  list('consumptive', c("450gl", "650gl", "ml"), "2", "a"),
+  list('consumptive', c("permanent", "temporary", "entitlement", "carryover"), "2", "b"),
+  list('consumptive', c("speculators", "traders"), "2", "c"),
+  
+  list('consumptive', c("barley", "cereals", "planted"), "3", "a"),
+  list('consumptive', c("feral"), "3", "b"),
+  
+  # elected reps
+  list('electedrep', c("1,500", "2,750", "450", "gigalitres"), "1", "a"),  
+  list('electedrep', c("overallocation"), "1", "b"),
+  
+  # resource managers
+  list('resourcemanagers', c("utilities", "wastewater", "stormwater", "potable"), "1", "a"),
+  list('resourcemanagers', c("customer", "customers"), "1", "b"),
+  list('resourcemanagers', c("covid", "pandemic"), "1", "c"),
+
+  # regional
+  list('regional', c("resident", "lived", "lga", "km2"), "1", "a"),
+  list('regional', c("councils", "interagency", "referenced", "website"), "1", "b"),
+  
+  list('regional', c("390gl", "320gl"), "2", "a"),
+  list('regional', c("tourism"), "2", "b"),
+  list('regional', c("equitable", "greedy", "wellbeing"), "2", "c"),
+  
   # First Nations
-  list('firstnations', c("colonisation", "dispossessed", "neoliberal", "nullius")),
-  list('firstnations', c("aboriginal", "indigenous", "lands", "peoples")),
-  list('firstnations', c("nban", "mldrin")),
-  list('firstnations', c("kon", "undrip", "title")),
-  list('firstnations', c("cultural", "spiritual", "traditions", "sacred", "customs")),
-  list('firstnations', c("foods", "hunting", "medicine")),
+  list('firstnations', c("aboriginal", "indigenous", "lands", "peoples"), "1", "a"),
+  list('firstnations', c("cultural", "spiritual", "traditions", "sacred", "customs"), "1", "b"),
+  list('firstnations', c("foods", "hunting", "medicine"), "1", "c"),
+  
+  list('firstnations', c("nban", "mldrin"), "2", "a"),
+  list('firstnations', c("colonisation", "dispossessed", "neoliberal", "nullius"), "2", "b"),
+  list('firstnations', c("kon", "undrip", "title"), "2", "c"),
+  
+  
   # Government
   list('government', c("accordance",
     "assurance",
@@ -461,15 +489,18 @@ groups_to_visualise <- list(
     "coordinated",
     "coordination",
     "undergone",
-    "undertaken")
-),
+    "undertaken"),
+    "1",
+    "a"
+  ),
+  
   # Research
-  list('research', c("journal", "australasian")),
-  list('research', c("decentralised", "scales", "linear")),
-  list('research', c("mortality", "stressors", "biota")),
-  list('research', c("sensing", "landsat")),
+  list('research', c("journal", "australasian"), "1", "a"),
+  list('research', c("decentralised", "scales", "linear"), "1", "b"),
+  list('research', c("sensing", "landsat"), "2", "a"),
+  list('research', c("mortality", "stressors", "biota"), "2", "b"),
+  
   # Environmental
-  list('environmental', c("migratory", "ramsar")),
   list('environmental', c(
     "415",
     "available",
@@ -478,21 +509,32 @@ groups_to_visualise <- list(
     "significant",
     "species",
     "stress"
-    )
+    ),
+    "2", 
+    "a"
   ),
- list('environmental', c(
+  list('environmental', c("migratory", "ramsar"), "1", "c"),
+  list('environmental', c(
     "birds",
     "fish",
     "wildlife"
- )),
- list('environmental', c(
+    ),
+    "1",
+    "a"
+  ),
+  list('environmental', c(
     "ecological",
     "vulnerable",
     "stress",
     "wetlands",
-    "marshes")
+    "marshes"),
+    "1",
+    "b"
   )
 )
+
+output_dir = "../results/by_group"
+if (!dir.exists(output_dir)) {dir.create(output_dir)}
 
 # Clear out the table file of previous results
 write("", file="../results/latex_tables.txt")
