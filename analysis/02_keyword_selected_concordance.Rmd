@@ -619,3 +619,86 @@ concordances <- bind_rows(lapply(seq_along(keyword_sources$feature), single_word
 write_xlsx(concordances, "../results/keyword_group_concordances.xlsx")
 
 ```
+
+# Collocations across groups for selected words
+
+For a selected group of words that are used in different ways across groups
+it's useful to capture the variation in collocations as an indicator of 
+variation in meanings.
+
+```{r}
+
+generate_group_collocates <- function(features) {
+  ranked_collocates <- list()
+  
+  for (group in unique(submissions$label)) {
+    
+    # Look at tokens only for the documents in the group: otherwise we mix keyword
+    # meanings from other groups.
+    group_tokens = submission_tokens[docvars(submission_corpus, 'label') == group]
+    
+    for (feature in features) {  
+      # Construct two objects: one containing just the regions
+      # around the keyword of interest, the other all of the
+      # other regions (both removing the keywords themselves).
+      # Then the collocation check is a keyword test.
+      # See: https://tutorials.quanteda.io/advanced-operations/target-word-collocations/
+      windowsize <- 10
+      tokens_inside <- tokens_keep(
+        group_tokens, 
+        pattern=feature, 
+        valuetype='fixed', 
+        # Note that window is after removing stop words and punctuation, so
+        # is effectively longer than you might first think.
+        window=windowsize
+      )
+      tokens_inside <- tokens_remove(
+        tokens_inside, pattern=feature, valuetype='fixed'
+      )
+      tokens_outside <- tokens_remove(
+        group_tokens, pattern=feature, valuetype='fixed', window=windowsize
+      )
+      
+      # We're determining collocations only for the group that generated
+      # the keyword so we can understand it in context for that group.
+      # Note that we'll trim any collocation that doesn't occur with the target
+      # word at least twice, to not score rare co-locations.
+      dfm_inside <- dfm(tokens_inside)
+      dfm_outside <- dfm(tokens_outside)
+                             
+      group_score <- textstat_keyness(
+        rbind(dfm_inside, dfm_outside), 
+        target = seq_len(ndoc(dfm_inside))
+      ) %>% 
+      filter(n_target > 2) %>% # Make sure to filter out if there are few collocates.
+      slice(1:10) %>% 
+      mutate(rank=rank(desc(chi2)))
+      
+      # Handle case of zero collocations - otherwise we get an error trying to
+      # assign a single value for the feature to an otherwise empty dataframe. If
+      # there's more than zero collocates the single value is broadcast to the
+      # full size of the df.
+      if (nrow(group_score) > 0) {
+        group_score$keyword = feature
+        group_score$keyword_from = group
+        ranked_collocates <- append(ranked_collocates, list(group_score))
+      } 
+    }
+  }
+  return (bind_rows(ranked_collocates))
+}
+
+# Extract collocations of each selected feature across all groups
+chosen_features = c("water", "community", "communities", "equity", "fairness", "justice")
+selected_collocates <- generate_group_collocates(chosen_features)
+
+wide_selected_ranked_collocates <- selected_collocates %>%
+  group_by(keyword_from, keyword) %>%
+  arrange(rank, .by_group = TRUE) %>%
+  summarise(collocated_features = paste0(feature, collapse=", "))
+
+
+write_xlsx(selected_collocates, "../results/selected_allgroup_collocates.xlsx")
+write_xlsx(wide_selected_ranked_collocates, "../results/wide_selected_allgroup_collocates.xlsx")
+
+```
