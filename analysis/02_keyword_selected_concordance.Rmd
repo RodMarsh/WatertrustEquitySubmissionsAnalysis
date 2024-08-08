@@ -474,7 +474,7 @@ groups_to_visualise <- list(
   
   # First Nations
   list('firstnations', c("aboriginal", "indigenous", "lands", "peoples"), "1", "a"),
-  list('firstnations', c("cultural", "spiritual", "traditions", "sacred", "customs"), "1", "b"),
+  list('firstnations', c("culture", "spiritual", "traditions", "sacred", "customs"), "1", "b"),
   list('firstnations', c("foods", "hunting", "medicine"), "1", "c"),
   
   list('firstnations', c("nban", "mldrin"), "2", "a"),
