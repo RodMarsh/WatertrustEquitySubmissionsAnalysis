@@ -628,10 +628,13 @@ variation in meanings.
 
 ```{r}
 
+# Generate the collocations of the selected words, both across the entire
+# group of submissions and specific groups.
 generate_group_collocates <- function(features) {
   ranked_collocates <- list()
   
   windowsize <- 10
+  top_n <- 20
   
   # First compute the collocations over all groups.
   for (feature in features) {  
@@ -667,7 +670,7 @@ generate_group_collocates <- function(features) {
       target = seq_len(ndoc(dfm_inside))
     ) %>% 
     filter(n_target > 2) %>% # Make sure to filter out if there are few collocates.
-    slice(1:10) %>% 
+    slice(1:top_n) %>% 
     mutate(rank=rank(desc(chi2)))
     
     # Handle case of zero collocations - otherwise we get an error trying to
@@ -720,7 +723,7 @@ generate_group_collocates <- function(features) {
         target = seq_len(ndoc(dfm_inside))
       ) %>% 
       filter(n_target > 2) %>% # Make sure to filter out if there are few collocates.
-      slice(1:10) %>% 
+      slice(1:top_n) %>% 
       mutate(rank=rank(desc(chi2)))
       
       # Handle case of zero collocations - otherwise we get an error trying to
@@ -738,14 +741,17 @@ generate_group_collocates <- function(features) {
 }
 
 # Extract collocations of each selected feature across all groups
-chosen_features = list("water", "community", "communities", 
+chosen_features = list(
+  "water", 
+  "community", 
+  "communities", 
+  "crisis",
   c(
     "fairness", 
     "unfair",
     "unfairness",
     "unfairly",
     "fair",
-    phrase("not fair"),
     "equity", 
     "equitable",
     "inequitable",
@@ -767,5 +773,82 @@ wide_selected_ranked_collocates <- selected_collocates %>%
 
 write_xlsx(selected_collocates, "../results/selected_allgroup_collocates.xlsx")
 write_xlsx(wide_selected_ranked_collocates, "../results/wide_selected_allgroup_collocates.xlsx")
+
+```
+
+# Concordances across groups for separate words
+
+``` {r}
+
+# Don't remove stopwords and punctuation for this phase as we want to generate
+# readable concordance lines.
+raw_tokens = tokens(submission_corpus,  split_hyphens = TRUE)
+
+# Create a sample of concordances for selected words in each group.
+# This driven solely by what has been selected, not the existing keywords.
+single_chosen_word_group_concordance <- function(feature, groups) {
+  
+  results <- list()
+  
+  for (group in groups) {
+    
+    if (group != 'environmental') {
+      tokens_subset = raw_tokens[docvars(submission_corpus, 'label') == group]
+      # Find matches, but don't generate full concordances yet
+      idx = index(tokens_subset, feature, valuetype="fixed")
+      # Subsample matches
+      idx <- idx[sample(nrow(idx), min(nrow(idx), 20)),]
+      concordances <- kwic(
+        tokens_subset, index=idx, window=20
+      ) %>% as.data.frame()
+    } else {
+      # Special case the environmental submissions to handle the multiple 
+      # duplicates by also taking concordances from elsewhere. We'll take
+      # a sample of 10 concordance lines from the mdba_bpa_2017, 10 from
+      # all other inquiries.
+      tokens_mdba = raw_tokens[docvars(submission_corpus, 'label') == group & docvars(submission_corpus, 'inquiry_shortname') == 'mdba_bpa_2017']
+      tokens_other = raw_tokens[docvars(submission_corpus, 'label') == group & docvars(submission_corpus, 'inquiry_shortname') != 'mdba_bpa_2017']
+      
+      idx_mdba = index(tokens_mdba, feature, valuetype="fixed")
+      idx_other = index(tokens_other, feature, valuetype="fixed")
+      # Subsample matches
+      idx_mdba <- idx_mdba[sample(nrow(idx_mdba), min(nrow(idx_mdba), 10)),]
+      idx_other <- idx_other[sample(nrow(idx_other), min(nrow(idx_other), 10)),]
+      
+      concordances_mdba <- kwic(
+        tokens_mdba, index=idx_mdba, window=20
+      ) %>% as.data.frame()
+      
+      concordances_other <- kwic(
+        tokens_other, index=idx_other, window=20
+      ) %>% as.data.frame()
+      
+      concordances <- concordances_mdba %>% union(concordances_other)
+      
+    }
+
+    if (nrow(concordances) > 0) {
+      concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
+      concordances$concordances_for <- group
+      concordances <- concordances %>% 
+        select(docname, concordances_for, pattern, pre, keyword, post, merged)
+      
+      results <- append(results, list(concordances))
+    }
+  }
+  
+  return(bind_rows(results))
+}
+
+concordances <- bind_rows(
+  lapply(
+    unlist(chosen_features, recursive = FALSE), 
+    single_chosen_word_group_concordance, 
+    groups=unique(keyword_sources$keyword_from)
+    )
+  )
+
+write_xlsx(concordances, "../results/selected_concordances_by_group.xlsx")
+
 
 ```
