@@ -751,12 +751,16 @@ chosen_features = list(
     "unfair",
     "unfairness",
     "unfairly",
-    "fair",
+    "fair"
+  ),
+  c(
     "equity", 
     "equitable",
     "inequitable",
     "inequity",
-    "unequitable",
+    "unequitable"
+  ),
+  c(
     "justice",
     "injustice",
     "injustices",
