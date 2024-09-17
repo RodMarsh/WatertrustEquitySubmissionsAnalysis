@@ -108,10 +108,15 @@ groups_dfm <- dfm_group(submissions_dfm, groups = label, force=TRUE)
 group_similarity <- textstat_simil(groups_dfm, method="cosine")
 group_sim_matrix <- as.matrix(group_similarity)
 
-
 # Create dendrogram from cosine "distance" to use for ordering the rows and cols
 # of the heatmap.
 hclust_res <- hclust(as.dist(1 - group_sim_matrix))  # 1 - cosine_similarity for distance
+
+group_names <- c(
+ "commercial, non con", "agricultural", "electedrep", "environmental", 
+ "first nations", "government", "not categorisable", "regional", "research", 
+ "resource managers"
+)
 
 pheatmap(
   group_sim_matrix, cluster_rows=hclust_res, cluster_cols=hclust_res, 
