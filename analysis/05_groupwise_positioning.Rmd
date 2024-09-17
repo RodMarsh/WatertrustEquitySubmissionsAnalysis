@@ -1,0 +1,131 @@
+# Positioning groups in relation to each other.
+
+This analysis aims to examine how groups may or may not be related to each 
+other, noting that each submission expresses itself through a set of things to 
+say. This analysis:
+
+- Extracts the word vectors for each submission
+- removes the stopwords
+- weights the features in each document by the relative term frequency and the
+  inverse document frequency - this gives more weight to terms that occur in
+  fewer documents and more times in the same document
+- represents a group by the sum of all of the document vectors for submissions
+  assigned to that group
+- calculates the similarity between groups using the cosine similarity, high
+  cosine similarity means that the documents in each group 
+- Plots the heatmap of similarities, along with the complete linkage based
+  dendrogram of clusters using the cosine distance as a pseudo-metric
+
+```{r eval=FALSE}
+install.packages("quanteda")
+install.packages("quanteda.textstats")
+install.packages("RSQLite")
+install.packages("writexl")
+install.packages("tidyverse")
+install.packages("pheatmap")
+```
+
+# Load and prepare are submission data as extracted from the various inquiries
+```{r}
+library(DBI)
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(writexl)
+library(xtable)
+library(pheatmap)
+
+inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
+submissions <- dbGetQuery(inquiries, 
+  'SELECT submission.*, submission_label.label, context FROM submission
+  inner join submission_label using(inquiry_shortname, submission_id)
+  inner join inquiry using(inquiry_shortname)
+  where priority = 1
+  '
+) %>% mutate(text = gsub("[‘’]", "'", text))
+
+# Generate a single column unique id - this is the composite primary key
+# defined in the database, so will always be unique. This is used to tie
+# together results at different granularities.
+submissions$doc_id <- paste(submissions$inquiry_shortname, submissions$submission_id)
+submission_corpus <- corpus(submissions, text_field="text", docid_field = "doc_id")
+
+dbDisconnect(inquiries)
+
+```
+
+# Groupwise similarity of documents.
+
+The aim of this analysis is pool all documents in a group together and represent
+them by the average vector of the bag of words for each document. This will
+provide a high level overview of how the language used by each group is similar
+to, or dissimilar to, other groups.
+
+```{r}
+
+# These are the byproducts of extracting text from the PDF where images are
+# included.
+pdf_processing_words <- c(
+  'image',
+  'height',
+  'width',
+  'rgb',
+  'srgb',
+  'bpc',
+  '16',
+  'iccbased'
+)
+
+# Unlike the keyword analysis, we'll include genre words and only remove the
+# predefined stoplist and the images in pdf byproduct words.
+extended_stopwords <- c(
+  pdf_processing_words,
+  stopwords("english")
+)
+
+submission_tokens <- tokens(
+    submission_corpus, remove_punct=TRUE, split_hyphens = TRUE, remove_symbols = TRUE
+  ) %>% 
+  tokens_remove(extended_stopwords, min_nchar=2)
+
+# Unlike the submissions analysis, we're going to use tf-idf weighting here.
+# Each vector will be normalised to unit length, removing the overweighting of 
+# the long documents in the process.
+submissions_dfm <- dfm(submission_tokens) %>% 
+  dfm_tfidf(scheme_tf="prop", scheme_df = "inverse")
+
+
+# Create groups - note this won't normalise the vectors for each group, that
+# will be taken care of by the cosine similarity. Note that force=TRUE is 
+# necessary because group vectors are accumulated by summing - if we weren't
+# using a similarity method that took into account normalisation of document 
+# lengths this would not be appropriate.
+groups_dfm <- dfm_group(submissions_dfm, groups = label, force=TRUE)
+
+# Actually calculate the cosine similarity - this is in the quanteda textstats
+# format and will need to be converted to a matrix for other functions in some
+# cases.
+group_similarity <- textstat_simil(groups_dfm, method="cosine")
+group_sim_matrix <- as.matrix(group_similarity)
+
+
+# Create dendrogram from cosine "distance" to use for ordering the rows and cols
+# of the heatmap.
+hclust_res <- hclust(as.dist(1 - group_sim_matrix))  # 1 - cosine_similarity for distance
+
+pheatmap(
+  group_sim_matrix, cluster_rows=hclust_res, cluster_cols=hclust_res, 
+  angle_col=45, display_numbers = round(group_sim_matrix, 2),
+  cellwidth = 24, cellheight = 24, 
+  main = "Group Similarities",
+  filename = "../results/groupwise_heatmap.pdf",
+  width = 5.5, height = 5.5,
+  legend = FALSE
+)
+
+
+```
+
+
+
+ 
