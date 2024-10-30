@@ -235,6 +235,7 @@ score_keywords <- function(keyword_dfm, corpus_variable_name, variable) {
 submitter_labels <- unique(submissions$label)
 
 results <- list()
+freq_results <- list()
 for (label in submitter_labels) {
     scores = score_keywords(submissions_boolean, 'label', label)
     scores$keyword_from <- label
@@ -255,10 +256,29 @@ keywords_final <- pivot_wider(
   id_cols = c("rank")
 )
 
+# count most frequent words by group. 
+all_freqs = textstat_frequency(submissions_dfm, n=20, groups=docvars(submission_corpus, 'label'), ties_method="random")
+
+freqs_final <- pivot_wider(
+  all_freqs,
+  names_from = c("group"),
+  values_from = c("feature"),
+  id_cols = c("rank"),
+)
+
+word_groups_top_20 <- all_freqs %>% 
+  group_by(feature) %>% 
+  count() %>% 
+  arrange(desc(n))
+
 # Version for detailed examination
 write_xlsx(keywords_final, "../results/initial_keywords.xlsx")
+write_xlsx(freqs_final, "../results/group_word_freqs.xlsx")
+write_xlsx(word_groups_top_20, "../results/word_group_top_20.xlsx")
 
 print(xtable(keywords_final %>% select(!rank)), include.rownames=FALSE)
+print(xtable(freqs_final), include.rownames=FALSE)
+print(xtable(word_groups_top_20), include.rownames=FALSE)
 ```
 
 # Keyword collocates
@@ -600,7 +620,7 @@ single_word_group_concordance <- function(i, groups) {
       
     }
 
-    if (nrow(concordances) > 0) {
+    if (!is.null(concordances) && nrow(concordances) > 0) {
       concordances$merged <- paste(concordances$pre, concordances$keyword, concordances$post)
       concordances$keyword_from <- keyword_from
       concordances$concordances_for <- group
