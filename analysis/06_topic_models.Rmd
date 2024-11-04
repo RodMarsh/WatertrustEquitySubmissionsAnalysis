@@ -204,3 +204,40 @@ pheatmap(heatmap %>% as.matrix(),
 
 ```
 
+# What about explicit notions of equity, fairness and justice?
+
+To examine the explicit ways that fairness terms interrelate with topics, we
+identify for each of the selected set of words for fairness the ordering of
+topics that it is most prevalent in.
+
+```{r}
+
+topic_term <- submissions_lda$phi
+
+# The commented terms were checked but aren't present (potentially they were)
+# filtered out by the number of docs checked.
+fairness_terms <- c(
+  "fairness",
+  "unfair",
+  # "unfairness",
+  "unfairly",
+  "fair",
+  "equity",
+  "equitable",
+  "inequitable",
+  "inequity",
+  # "unequitable",
+  "justice",
+  "injustice",
+  "injustices",
+  "unjust"
+)
+
+fairness_topic_weights <- topic_term[,fairness_terms] %>% as.data.frame()
+fairness_topic_weights$topic <- rownames(fairness_topic_weights)
+fairness_topic_weights <- topic_word_prevalence %>%
+  inner_join(fairness_topic_weights, by=join_by(topic))
+
+write_xlsx(fairness_topic_weights, "../results/fairness_topic_weights.xlsx")
+    
+```
