@@ -11,6 +11,7 @@ install.packages("writexl")
 install.packages("tidyverse")
 install.packages("seededlda")
 install.packages("xtable")
+install.packages("pheatmap")
 ```
 
 # Load and prepare are submission data as extracted from the various inquiries
@@ -22,6 +23,7 @@ library(quanteda.textstats)
 library(seededlda)
 library(writexl)
 library(xtable)
+library(pheatmap)
 
 inquiries <- dbConnect(RSQLite::SQLite(), "../inquiries/inquiries.db")
 submissions <- dbGetQuery(inquiries, 
@@ -42,14 +44,14 @@ dbDisconnect(inquiries)
 
 ```
 
-# Construct document-feature matrix then topic models
-
-The topic models here are not apriori constructed: this is done after our 
-detailed analysis of keywords and actor-groups. The way we interpret these
-models is therefore informed by this previous close reading and analysis. 
+# Construct document-feature matrix specific for topic models
 
 Note that the feature processing and tokenisation pipeline is the same as used
-in the concordance and keyword analysis.
+in the concordance and keyword analysis, with a few additional stopwords to
+handle features that complicate topic analysis but did not impact on keyword
+analysis. Unlike the keyword analysis the stopword list is more limited and
+does not include genre-indicator words: these cluster together as topics 
+enabling them to be more easily filtered.
 
 ```{r}
 
@@ -65,139 +67,16 @@ pdf_processing_words <- c(
   '16',
   'iccbased'
 )
-# These words are potential keywords, but reflect the genre and form of the
-# submission, not the substantive content.
-genre_words <- c(
-  'pty', 
-  'ltd',
-"etc",
-"re",
-"amendment",
-"bill",
-"chamber",
-"coalition",
-"commend",
-"debate",
-"deputy",
-"election",
-"electorate",
-"greens",
-"hanson",
-"labor",
-"legislation",
-"liberal",
-"minister",
-"opposition",
-"prime",
-"rise",
-"said",
-"say",
-"saying",
-"senator",
-"something",
-"speak",
-"speaker",
-"speech",
-"sure",
-"talk",
-"talked",
-"talking",
-"things",
-"think",
-"today",
-"want",
-"went",
-"authority",
-"authority",
-"basin",
-"darling",
-"sincerely",
-"submission",
-"067",
-"1801",
-"bag",
-"compiling",
-"contact",
-"cr",
-"fax",
-"gpo",
-"hon",
-"manager",
-"mayor",
-"mlc",
-"mp",
-"nicholson",
-"ref",
-"street",
-"telephone",
-"terrace",
-"welcomes",
-"____",
-"ater",
-"com",
-"con",
-"en",
-"fig",
-"fo",
-"hello",
-"ion",
-"les",
-"ll",
-"lo",
-"ns",
-"redacted",
-"tions",
-"tt",
-"ve",
-"167",
-"1944",
-"associate",
-"association",
-"box",
-"bradbury",
-"cr",
-"emma",
-"inc",
-"officer",
-"po",
-"shire",
-"www.mda.asn.au",
-"10.1080",
-"141",
-"145",
-"146",
-"159",
-"163",
-"265",
-"315",
-"342",
-"349",
-"359",
-"664",
-"722",
-"academy",
-"institute",
-"phd",
-"professor",
-"r.j",
-"r.m",
-"sciences",
-"society",
-"university",
-"acn",
-"10.1111",
-"al",
-"doi",
-"e.g",
-"eds",
-"et",
-"pp",
-"8003"
+
+# Additional words that can be prominent in topics but did not matter for 
+# keyword analysis.
+topic_model_specific_words <- c(
+  "water"
 )
 
 extended_stopwords <- c(
-  genre_words,
   pdf_processing_words,
+  topic_model_specific_words,
   stopwords("english")
 )
 
@@ -208,8 +87,21 @@ submission_tokens <- tokens(
 
 # Only consider words that appear in at least 10 submissions overall.
 submissions_dfm <- dfm_trim(dfm(submission_tokens), min_docfreq=10)
+```
 
+# Generate topic models, and construct summary and prevalence estimates
+
+Generates topic model with a large number of topics, and includes a basic 
+summary of the prevalent words in each topic, and the estimated 'prevalence' of
+that topic across all of the documents in the collection.
+
+```{r}
+
+# Set the seed for topic modelling consistency from run to run
+set.seed(1618269559)
 # Generate the topic model, with a large number of topics to enable filtering.
+# Note that this is slow - we could use the parallel implementation, but it is
+# non deterministic from run to run, even with the seed set.
 submissions_lda <- textmodel_lda(submissions_dfm, k=50)
 results <- terms(submissions_lda, n=40) %>% 
   as.data.frame() %>%
@@ -227,9 +119,88 @@ relative_prevalence <- colSums(submissions_lda$theta) / sum(submissions_lda$thet
 relative_prevalence <- cbind(read.table(text = names(relative_prevalence)), relative_prevalence)
 
 # Glue back together
-topic_word_prevalence <- results %>% inner_join(relative_prevalence, by=join_by(topic == V1))
+topic_word_prevalence <- results %>% 
+  inner_join(relative_prevalence, by=join_by(topic == V1)) %>%
+  arrange(desc(relative_prevalence))
 
 write_xlsx(topic_word_prevalence, '../results/topic_words_prevalence.xlsx')
+
+```
+
+# Topic prevalence by groups and inquiries
+
+Topic prevalence for documents can be broken down to show the usage across 
+groups (indicating potential frame takeup by groups), or across inquiries (
+indicating that a topic might be responsive to the terms-of-reference or issues
+raised in an inquiry).
+
+These visualisations illustrate topic prevalence by groups and also by 
+inquiries.
+
+```{r}
+
+# Get topic-document matrix and put it back together with the submission
+# variables so we can aggregate by submitter group and inquiry.
+doc_topics <- submissions_lda$theta %>% 
+  as.data.frame()
+
+# Make the doc_id column explicit
+doc_topics$doc_id <- rownames(doc_topics)
+
+# Pivot to long for averages in the next step
+doc_topics <- doc_topics %>%
+  pivot_longer(!doc_id, values_to="proportion", names_to="topic")
+
+# Join the relevant metadata for easier aggregation
+doc_topics <- doc_topics %>% 
+  inner_join(
+    submissions %>% select(doc_id, label, inquiry_shortname, submitter, url),
+    by = join_by(doc_id == doc_id)
+  ) 
+
+# While we're here, for each topic, find the submitters of the 10 documents with 
+# the highest estimated prevalence.
+top_docs_by_topic <- doc_topics %>% 
+  group_by(topic) %>%
+  slice_max(proportion, n=10) %>%
+  arrange(desc(proportion), .by_group = TRUE)
+
+write_xlsx(top_docs_by_topic, "../results/top_docs_by_topic.xlsx")
+  
+
+# Aggregate prevalence by group
+by_label <- doc_topics %>%
+  group_by(label, topic) %>%
+  summarise(topic_proportion=mean(proportion), .groups="keep")
+
+# Aggregate proportion by inquiry for comparison
+by_inquiry <- doc_topics %>%
+  group_by(inquiry_shortname, topic) %>%
+  summarise(topic_proportion=mean(proportion), .groups="keep") %>%
+  rename(label=inquiry_shortname)
+
+aggregated_topics <- rbind(by_label, by_inquiry)
+heatmap <- aggregated_topics %>%
+  pivot_wider(names_from = label, values_from=topic_proportion, id_cols=topic)
+heatmap <- column_to_rownames(heatmap, var="topic")
+
+# Create a matric with appropriate row and column names
+heatmap_label <- by_label %>% 
+
+heatmap_inquiry <- by_inquiry %>% 
+  pivot_wider(names_from = inquiry_shortname, values_from=topic_proportion, id_cols=topic)
+heatmap_inquiry <- column_to_rownames(heatmap_inquiry, var="topic")
+
+pheatmap(heatmap %>% as.matrix(), 
+  cluster_rows=FALSE, 
+  cluster_cols=FALSE,
+  angle_col=45,
+  cellwidth = 24, cellheight = 6, 
+  main = "Topice Prevalence by Submitter and Inquiry",
+  filename = "../results/topics_group_inquiry.pdf",
+  width = 8, height = 6.5,
+  legend = FALSE
+)
 
 ```
 
