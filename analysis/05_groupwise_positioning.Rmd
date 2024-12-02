@@ -118,14 +118,21 @@ group_names <- c(
  "resource managers"
 )
 
+gradient = colorRampPalette(c("white", "#09c7a3"), space="Lab")(20)
+
 pheatmap(
-  group_sim_matrix, cluster_rows=hclust_res, cluster_cols=hclust_res, 
+  group_sim_matrix, 
+  cluster_rows=hclust_res, 
+  cluster_cols=hclust_res, 
   angle_col=45, display_numbers = round(group_sim_matrix, 2),
   cellwidth = 24, cellheight = 24, 
+  color = gradient,
   main = "Group Similarities",
   filename = "../results/groupwise_heatmap.pdf",
   width = 5.5, height = 5.5,
-  legend = FALSE
+  legend = FALSE,
+  labels_row = group_names,
+  labels_col = group_names
 )
 
 
