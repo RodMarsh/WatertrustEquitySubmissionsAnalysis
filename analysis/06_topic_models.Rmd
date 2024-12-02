@@ -108,7 +108,7 @@ set.seed(1618269559)
 # Note that this is slow - we could use the parallel implementation, but it is
 # non deterministic from run to run, even with the seed set.
 submissions_lda <- textmodel_lda(submissions_dfm, k=30, auto_iter=TRUE)
-results <- terms(submissions_lda, n=40) %>% 
+results <- terms(submissions_lda, n=20) %>% 
   as.data.frame() %>%
   pivot_longer(everything(), names_to="topic") %>%
   group_by(topic) %>%
@@ -149,7 +149,8 @@ topic_row_names <- terms(submissions_lda, n=3) %>%
   as.data.frame() %>%
   pivot_longer(everything(), names_to="topic") %>%
   group_by(topic) %>%
-  summarise(features = paste0(value, collapse=", "))
+  summarise(features = paste0(value, collapse=", ")) %>%
+  mutate(features = paste0(regmatches(topic, regexpr("[0-9]+", topic)), ": ", features), sep="")
 
 # Get topic-document matrix and put it back together with the submission
 # variables so we can aggregate by submitter group and inquiry.
@@ -179,20 +180,28 @@ top_docs_by_topic <- doc_topics %>%
   arrange(desc(proportion), .by_group = TRUE)
 
 write_xlsx(top_docs_by_topic, "../results/top_docs_by_topic.xlsx")
-  
+
+# Also for tabulation purposes, the same data, but only three submitters
+top_docs_by_topic_small <- doc_topics %>% 
+  group_by(topic) %>%
+  slice_max(proportion, n=3) %>%
+  arrange(desc(proportion), .by_group = TRUE) %>%
+  summarise(submitters = paste0(submitter, collapse=", "))
+
+topic_table <- topic_word_prevalence %>% 
+  inner_join(top_docs_by_topic_small, by=join_by(topic))
+
+# Rewrite so the topic ids are numerical
+topic_table$topic <- regmatches(topic_table$topic, regexpr("[0-9]+", topic_table$topic))
+
+write_xlsx(topic_table, '../results/topic_overview.xlsx')
+print(xtable(topic_table, digits=3), include.rownames=FALSE)
 
 # Aggregate prevalence by group
-by_label <- doc_topics %>%
+aggregated_topics <- doc_topics %>%
   group_by(label, features) %>%
   summarise(topic_proportion=mean(proportion), .groups="keep")
 
-# Aggregate proportion by inquiry for comparison
-by_inquiry <- doc_topics %>%
-  group_by(inquiry_shortname, features) %>%
-  summarise(topic_proportion=mean(proportion), .groups="keep") %>%
-  rename(label=inquiry_shortname)
-
-aggregated_topics <- rbind(by_label, by_inquiry)
 heatmap <- aggregated_topics %>%
   pivot_wider(names_from = label, values_from=topic_proportion, id_cols=features)
 heatmap <- column_to_rownames(heatmap, var="features")
@@ -204,10 +213,9 @@ cosine_topic_similarity <- function(mat){
   return (normalised_mat %*% t(normalised_mat))
 } 
 
-# Distance between topics is based on the similarity of the topic-document
-# distributions.
+# Distance between topics is based on the similarity of the topic-term
+# probability distributions
 topic_words <- submissions_lda$phi
-# topic_words <- t(submissions_lda$theta)
 
 # Note these aren't in the same order so the renaming requires a lookup
 # and we also need to make sure that the heatmap and the topics have the
@@ -220,33 +228,54 @@ rownames(topic_words) <- topic_row_names$features[name_order]
 ordering <- match(rownames(topic_words), rownames(heatmap))
 heatmap <- heatmap[ordering, ]
 
-
-
 topic_dist_similarity <- cosine_topic_similarity(topic_words)
 
 # Generate clustering for heatmaps
 topic_clustering <- hclust(as.dist(1 - topic_dist_similarity))
 
-pheatmap(heatmap %>% as.matrix(), 
+n_clusters = 5
+
+gradient = colorRampPalette(c("white", "#1053f9"), space="Lab")(20)
+
+pheatmap((heatmap * 100) %>% as.matrix(), 
+  color=gradient,
   cluster_rows=topic_clustering, 
   cluster_cols=FALSE,
   angle_col=45,
-  cellwidth = 18, cellheight = 10, 
-  main = "Topic Prevalence by Submitter and Inquiry",
-  filename = "../results/topics_group_inquiry.pdf",
-  width = 12, height = 6.5,
-  legend = FALSE
+  cellwidth = 15, cellheight = 15, 
+  main = "Topic Prevalence by Group",
+  filename = "../results/topics_group_heatmap.pdf",
+  width = 7, height = 8,
+  legend = TRUE,
+  legend_break = c(10, 20, 30, 35),
+  legend_labels = c("10", "20", "30", "%"),
+  labels_col = c(
+    "commercial, non con", 
+    "agricultural", 
+    "electedrep", 
+    "environmental", 
+    "firstnations", 
+    "government", 
+    "not categorisable",
+    "regional",  
+    "research", 
+    "resource managers"
+  ),
+  cutree_rows = n_clusters
 )
 
 pheatmap(topic_dist_similarity,
   cluster_rows=topic_clustering, 
   cluster_cols=topic_clustering,
+  color=gradient,
   angle_col=45,
-  cellwidth = 10, cellheight = 10, 
+  cellwidth = 16, cellheight = 16, 
   main = "Topic Distributional Similarities",
   filename = "../results/topic_similarities.pdf",
-  width = 12, height = 12,
-  legend = FALSE   
+  width = 10.5, height = 10,
+  legend = FALSE,
+  cutree_rows = n_clusters,
+  cutree_cols = n_clusters
 )
 
 ```
@@ -259,7 +288,6 @@ topics that it is most prevalent in.
 
 ```{r}
 
-topic_term <- submissions_lda$phi
 
 # The commented terms were checked but aren't present (potentially they were)
 # filtered out by the number of docs checked.
@@ -280,12 +308,49 @@ fairness_terms <- c(
   "unjust"
 )
 
-fairness_topic_weights <- topic_term[,fairness_terms] %>% as.data.frame()
-fairness_topic_weights$topic <- rownames(fairness_topic_weights)
-fairness_topic_weights <- topic_word_prevalence %>%
-  inner_join(fairness_topic_weights, by=join_by(topic))
+fairness_topic_weights <- topic_words[,fairness_terms] * 100
 
-write_xlsx(fairness_topic_weights, "../results/fairness_topic_weights.xlsx")
+pheatmap(fairness_topic_weights,
+  cluster_rows=topic_clustering, 
+  cluster_cols=FALSE,
+  color=gradient,
+  angle_col=45,
+  cellwidth = 15, cellheight = 15, 
+  main = "Weight of Fairness Terms by Topic",
+  filename = "../results/topic_efj_weights.pdf",
+  width = 7, height = 7.5,
+  legend = TRUE,
+  legend_break = c(0.05, 0.1, 0.15, 0.2, 0.225),
+  legend_labels = c("0.05", "0.10", "0.15", "0.20", "%"),
+  cutree_rows = n_clusters
+)
+
+write_xlsx(fairness_topic_weights %>% as.data.frame(), "../results/fairness_topic_weights.xlsx")
+
     
 ```
+
+# Aggregating topics together based on the clustering
+
+Final heatmap, showing topic prevalence aggregated up a few levels to avoid
+the overload of trying to look at 30 x n heatmaps
+
+```{r}
+
+cut_clusters = cutree(topic_clustering, k = n_clusters)
+
+
+merge_rows <- function(i, array, combinations){
+  return(colSums(array[combinations == i, ]))
+}
+
+sapply(unique(cut_clusters), merge_rows, array = submissions_lda$phi, combinations=cut_clusters)
+
+sapply(unique(cut_clusters), merge_rows, array = t(submissions_lda$theta), combinations=cut_clusters)
+
+
+
+```
+
+
 
