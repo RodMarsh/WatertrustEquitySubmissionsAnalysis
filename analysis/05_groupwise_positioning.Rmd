@@ -113,7 +113,7 @@ group_sim_matrix <- as.matrix(group_similarity)
 hclust_res <- hclust(as.dist(1 - group_sim_matrix))  # 1 - cosine_similarity for distance
 
 group_names <- c(
- "commercial, non con", "agricultural", "electedrep", "environmental", 
+ "commercial, non con", "agricultural", "elected representatives", "environmental", 
  "first nations", "government", "not categorisable", "regional", "research", 
  "resource managers"
 )
